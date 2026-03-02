@@ -7,8 +7,21 @@ public class Somnus : ModuleRules
 	public Somnus(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+		
+		PublicIncludePaths.Add(ModuleDirectory);
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			"Core", 
+			"CoreUObject", 
+			"Engine",
+			"InputCore",
+			"EnhancedInput",
+			// GAS Modules
+			"GameplayAbilities", 
+			"GameplayTags", 
+			"GameplayTasks"
+		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 

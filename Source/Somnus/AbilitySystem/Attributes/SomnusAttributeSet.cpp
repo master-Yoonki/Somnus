@@ -1,0 +1,60 @@
+// Fill out your copyright notice in the Description page of Project Settings.
+
+
+#include "AbilitySystem/Attributes/SomnusAttributeSet.h"
+#include "Net/UnrealNetwork.h"
+
+USomnusAttributeSet::USomnusAttributeSet()
+{
+	// Initialize default values (Can be overridden later by Gameplay Effects)
+	InitHealth(100.0f);
+	InitMaxHealth(100.0f);
+	InitStamina(100.0f);
+	InitMaxStamina(100.0f);
+}
+
+void USomnusAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	// Register attributes for replication to all clients
+	DOREPLIFETIME_CONDITION_NOTIFY(USomnusAttributeSet, Health, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(USomnusAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(USomnusAttributeSet, Stamina, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(USomnusAttributeSet, MaxStamina, COND_None, REPNOTIFY_Always);
+}
+
+void USomnusAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue)
+{
+	Super::PostAttributeChange(Attribute, OldValue, NewValue);
+	
+	if (Attribute == GetHealthAttribute())
+	{
+		OnHealthChanged.Broadcast(NewValue, GetMaxHealth());
+	}
+    
+	if (Attribute == GetStaminaAttribute())
+	{
+		OnStaminaChanged.Broadcast(NewValue, GetMaxStamina());
+	}
+}
+
+void USomnusAttributeSet::OnRep_Health(const FGameplayAttributeData& OldHealth)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(USomnusAttributeSet, Health, OldHealth);
+}
+
+void USomnusAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHealth)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(USomnusAttributeSet, MaxHealth, OldMaxHealth);
+}
+
+void USomnusAttributeSet::OnRep_Stamina(const FGameplayAttributeData& OldStamina)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(USomnusAttributeSet, Stamina, OldStamina);
+}
+
+void USomnusAttributeSet::OnRep_MaxStamina(const FGameplayAttributeData& OldMaxStamina)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(USomnusAttributeSet, MaxStamina, OldMaxStamina);
+}
