@@ -1,0 +1,14 @@
+﻿# Unreal Engine Core
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Build/
+
+# IDE and OS
+.idea/
+.vs/
+.vscode/
+*.sln
+*.suo
+*.DS_Store
