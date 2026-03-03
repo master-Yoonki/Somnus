@@ -8,6 +8,7 @@
 #include "InputActionValue.h"
 #include "SomnusCharacter.generated.h"
 
+class ASomnusWeapon;
 /**
  * Base character class for Project Somnus.
  * Acts as the physical avatar for the GAS component stored in the PlayerState.
@@ -25,6 +26,9 @@ public:
 
 	// Called when the server assigns a controller to this character
 	virtual void PossessedBy(AController* NewController) override;
+	
+	// Replicate this actor for multiplayer
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	
 protected:
 	// Called when the game starts or when spawned
@@ -75,4 +79,17 @@ public:
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "GAS|UI")
 	void UpdateStaminaUI(float CurrentStamina, float MaxStamina);
+	
+	// Getter function for AnimNotify and Abilities to read the weapon data
+	UFUNCTION(BlueprintCallable, Category = "Weapon")
+	ASomnusWeapon* GetEquippedWeapon() const { return EquippedWeapon; }
+
+protected:
+	// The class of the weapon to spawn when the game starts (Set in BP)
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	TSubclassOf<ASomnusWeapon> DefaultWeaponClass;
+
+	// The actual weapon instance currently equipped
+	UPROPERTY(Transient, Replicated)
+	TObjectPtr<ASomnusWeapon> EquippedWeapon;
 };

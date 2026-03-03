@@ -12,6 +12,8 @@
 #include "EnhancedInputSubsystems.h"
 #include "AbilitySystem/Attributes/SomnusAttributeSet.h"
 #include "Components/CapsuleComponent.h"
+#include "Net/UnrealNetwork.h"
+#include "Equipment/SomnusWeapon.h"
 
 ASomnusCharacter::ASomnusCharacter()
 {
@@ -62,6 +64,12 @@ void ASomnusCharacter::PossessedBy(AController* NewController)
 	}
 }
 
+void ASomnusCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ASomnusCharacter, EquippedWeapon);
+}
+
 void ASomnusCharacter::BeginPlay()
 {
 	Super::BeginPlay();
@@ -71,6 +79,27 @@ void ASomnusCharacter::BeginPlay()
 		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PlayerController->GetLocalPlayer()))
 		{
 			Subsystem->AddMappingContext(DefaultMappingContext, 0);
+		}
+	}
+	
+	// 2. Spawn and equip the default weapon (Server Only)
+	if (HasAuthority() && DefaultWeaponClass)
+	{
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.Owner = this;
+		SpawnParams.Instigator = this;
+
+		ASomnusWeapon* SpawnedWeapon = GetWorld()->SpawnActor<ASomnusWeapon>(
+			DefaultWeaponClass, 
+			GetActorLocation(), 
+			GetActorRotation(), 
+			SpawnParams
+		);
+
+		if (SpawnedWeapon)
+		{
+			SpawnedWeapon->Equip(this);
+			EquippedWeapon = SpawnedWeapon;
 		}
 	}
 }
