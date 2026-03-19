@@ -9,16 +9,26 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "Components/StaticMeshComponent.h"
 
+void USomnusAnimNotifyState_MeleeTrace::NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,
+	float TotalDuration, const FAnimNotifyEventReference& EventReference)
+{
+	Super::NotifyBegin(MeshComp, Animation, TotalDuration, EventReference);
+	AlreadyHitActors.Empty();
+}
+
 void USomnusAnimNotifyState_MeleeTrace::NotifyTick(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,
 	float FrameDeltaTime, const FAnimNotifyEventReference& EventReference)
 {
 	Super::NotifyTick(MeshComp, Animation, FrameDeltaTime, EventReference);
-	
+
 	if (!MeshComp || !MeshComp->GetOwner()) return;
 
     // Get the character owning this animation
     ASomnusCharacter* OwnerChar = Cast<ASomnusCharacter>(MeshComp->GetOwner());
     if (!OwnerChar) return;
+
+    // Only process hits on the server to prevent duplicate damage in multiplayer
+    if (!OwnerChar->HasAuthority()) return;
 
     // Get the equipped melee weapon data container
     ASomnusMeleeWeapon* Weapon = Cast<ASomnusMeleeWeapon>(OwnerChar->GetEquippedWeapon());
@@ -31,7 +41,8 @@ void USomnusAnimNotifyState_MeleeTrace::NotifyTick(USkeletalMeshComponent* MeshC
 
     TArray<FHitResult> HitResults;
     TArray<AActor*> ActorsToIgnore;
-    ActorsToIgnore.Add(OwnerChar); // Never hit ourselves
+    ActorsToIgnore.Add(OwnerChar);
+    ActorsToIgnore.Append(AlreadyHitActors);
 
     // 2. Perform the Sphere Trace
     UKismetSystemLibrary::SphereTraceMulti(
@@ -42,7 +53,7 @@ void USomnusAnimNotifyState_MeleeTrace::NotifyTick(USkeletalMeshComponent* MeshC
         UEngineTypes::ConvertToTraceType(ECC_Pawn),
         false,
         ActorsToIgnore,
-        EDrawDebugTrace::ForOneFrame, // Draw red/green lines for visual debugging
+        EDrawDebugTrace::ForOneFrame,
         HitResults,
         true,
         FLinearColor::Red,
@@ -50,21 +61,26 @@ void USomnusAnimNotifyState_MeleeTrace::NotifyTick(USkeletalMeshComponent* MeshC
         0.0f
     );
 
-    // 3. Process Hits and send Gameplay Events to the Ability!
+    // 3. Process Hits and send Gameplay Events to the Ability
     for (const FHitResult& Hit : HitResults)
     {
         AActor* HitActor = Hit.GetActor();
-        if (HitActor && HitActor != OwnerChar)
+        if (HitActor && HitActor != OwnerChar && !AlreadyHitActors.Contains(HitActor))
         {
-            // Pack the hit information into a Payload
+            AlreadyHitActors.Add(HitActor);
+
             FGameplayEventData Payload;
             Payload.Instigator = OwnerChar;
             Payload.Target = HitActor;
-            
-            // You can also add the exact HitResult to TargetData here for precise blood splatters later!
 
-            // Send the "I hit someone!" event to the character's Ability System Component
             UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(OwnerChar, SomnusTags::Event_Melee_Hit, Payload);
         }
     }
+}
+
+void USomnusAnimNotifyState_MeleeTrace::NotifyEnd(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,
+	const FAnimNotifyEventReference& EventReference)
+{
+	Super::NotifyEnd(MeshComp, Animation, EventReference);
+	AlreadyHitActors.Empty();
 }

@@ -5,10 +5,14 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemInterface.h"
+#include "GameplayTagContainer.h"
 #include "InputActionValue.h"
 #include "SomnusCharacter.generated.h"
 
 class ASomnusWeapon;
+class USomnusInputConfig;
+enum class ESomnusGait : uint8;
+
 /**
  * Base character class for Project Somnus.
  * Acts as the physical avatar for the GAS component stored in the PlayerState.
@@ -26,10 +30,10 @@ public:
 
 	// Called when the server assigns a controller to this character
 	virtual void PossessedBy(AController* NewController) override;
-	
+
 	// Replicate this actor for multiplayer
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-	
+
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -37,23 +41,33 @@ protected:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	// Input Actions
+	// Input mapping context added in BeginPlay
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	class UInputMappingContext* DefaultMappingContext;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
-	class UInputAction* JumpAction;
+	// Data asset that defines all input→tag mappings
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USomnusInputConfig> InputConfig;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
-	class UInputAction* MoveAction;
+	// Maps an input tag (e.g. Input.Ability.Attack) to the ability tags to activate
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Abilities", meta = (AllowPrivateAccess = "true"))
+	TMap<FGameplayTag, FGameplayTagContainer> InputTagToAbilityTags;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
-	class UInputAction* LookAction;
+	// Input tags that cancel their abilities on release (hold-type inputs like Aim, Block, etc.)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Abilities", meta = (AllowPrivateAccess = "true"))
+	FGameplayTagContainer HoldInputTags;
 
-	// Input Callbacks
+	// Native input callbacks
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
-	
+
+	// Ability input callbacks (called with the InputTag as payload)
+	void AbilityInputTagPressed(FGameplayTag InputTag);
+	void AbilityInputTagReleased(FGameplayTag InputTag);
+
+	// Adds the DefaultMappingContext to the local player's Enhanced Input subsystem
+	void AddInputMappingContext() const;
+
 protected:
 	// Called on the client when the PlayerState is successfully replicated
 	virtual void OnRep_PlayerState() override;
@@ -66,30 +80,54 @@ protected:
     // Follow camera
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
     class UCameraComponent* FollowCamera;
-	
+
 public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "UI")
 	void InitHUD();
-	
+
 	UFUNCTION(BlueprintCallable, Category = "GAS|UI")
 	void BindAttributeCallbacks();
-	
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "GAS|UI")
 	void UpdateHealthUI(float CurrentHealth, float MaxHealth);
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "GAS|UI")
 	void UpdateStaminaUI(float CurrentStamina, float MaxStamina);
-	
+
 	// Getter function for AnimNotify and Abilities to read the weapon data
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
 	ASomnusWeapon* GetEquippedWeapon() const { return EquippedWeapon; }
 
-protected:
-	// The class of the weapon to spawn when the game starts (Set in BP)
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	TSubclassOf<ASomnusWeapon> DefaultWeaponClass;
+	// Switch weapon slot: 0 = unarmed, 1+ = weapon index in WeaponClasses
+	UFUNCTION(BlueprintCallable, Category = "Weapon")
+	void SwitchWeapon(int32 SlotIndex);
 
-	// The actual weapon instance currently equipped
+	UFUNCTION()
+	ESomnusGait GetCurrentGait() const { return CurrentGait; }
+
+protected:
+	// Default full body locomotion layer (ABP_UnarmedLocomotion — always re-linked on unequip)
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
+	TSubclassOf<UAnimInstance> DefaultLocomotionLayerClass;
+
+	// Weapon classes available (configured in BP)
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
+	TArray<TSubclassOf<ASomnusWeapon>> WeaponClasses;
+
+	// Spawned weapon instances (persistent inventory)
 	UPROPERTY(Transient, Replicated)
+	TArray<TObjectPtr<ASomnusWeapon>> WeaponInventory;
+
+	// Currently equipped weapon (null = unarmed)
+	UPROPERTY(Transient, ReplicatedUsing = OnRep_EquippedWeapon)
 	TObjectPtr<ASomnusWeapon> EquippedWeapon;
+
+	UFUNCTION()
+	void OnRep_EquippedWeapon(ASomnusWeapon* OldWeapon);
+
+	// Handles anim layer swap — called on both server and client
+	void UpdateWeaponAnimLayers(ASomnusWeapon* OldWeapon, ASomnusWeapon* NewWeapon);
+
+	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
+	ESomnusGait CurrentGait;
 };

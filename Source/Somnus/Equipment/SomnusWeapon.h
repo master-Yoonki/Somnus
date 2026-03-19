@@ -9,6 +9,14 @@
 #include "GameFramework/Actor.h"
 #include "SomnusWeapon.generated.h"
 
+UENUM(BlueprintType)
+enum class ESomnusWeaponType : uint8
+{
+	None    UMETA(DisplayName = "None"),
+	Bat     UMETA(DisplayName = "Bat"),
+	Sword   UMETA(DisplayName = "Sword")
+};
+
 UCLASS()
 class SOMNUS_API ASomnusWeapon : public AActor
 {
@@ -27,7 +35,24 @@ public:
 	// Called by the server to unequip
 	virtual void Unequip();
 
+	ESomnusWeaponType GetWeaponType() const { return WeaponType; }
+	bool HasUpperBodyLayer() const { return UpperBodyAnimLayerClass != nullptr; }
+
+	void LinkAnimLayers(USkeletalMeshComponent* Mesh);
+	void UnlinkAnimLayers(USkeletalMeshComponent* Mesh);
+
 protected:
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Setup")
+	ESomnusWeaponType WeaponType = ESomnusWeaponType::None;
+
+	// Replaces full body locomotion (e.g., rifle has its own walk/run/idle set)
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
+	TSubclassOf<UAnimInstance> FullBodyLocomotionLayerClass;
+
+	// Upper body overlay (e.g., bat/sword idle pose over unarmed locomotion)
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
+	TSubclassOf<UAnimInstance> UpperBodyAnimLayerClass;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon|Components")
 	class UStaticMeshComponent* WeaponMesh;
 
@@ -53,4 +78,5 @@ protected:
 	// Called on clients when OwningCharacter is replicated
 	UFUNCTION()
 	virtual void OnRep_OwningCharacter();
+
 };

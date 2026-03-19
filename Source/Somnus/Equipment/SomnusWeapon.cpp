@@ -86,23 +86,49 @@ void ASomnusWeapon::Unequip()
 
 	// 2. Physical Detachment (Server side)
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-    
+
 	OwningCharacter = nullptr;
 	SetOwner(nullptr);
 }
 
 void ASomnusWeapon::OnRep_OwningCharacter()
 {
-	// Client-side visual attachment/detachment
+	// Client-side physical attachment/detachment only
 	if (OwningCharacter)
 	{
-		// If we received a valid character, attach to it
 		FAttachmentTransformRules AttachRules(EAttachmentRule::SnapToTarget, true);
 		AttachToComponent(OwningCharacter->GetMesh(), AttachRules, AttachSocketName);
 	}
 	else
 	{
-		// If the character is null (unequipped), detach
 		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	}
+}
+
+void ASomnusWeapon::LinkAnimLayers(USkeletalMeshComponent* Mesh)
+{
+	if (!Mesh) return;
+
+	if (FullBodyLocomotionLayerClass)
+	{
+		Mesh->LinkAnimClassLayers(FullBodyLocomotionLayerClass);
+	}
+	if (UpperBodyAnimLayerClass)
+	{
+		Mesh->LinkAnimClassLayers(UpperBodyAnimLayerClass);
+	}
+}
+
+void ASomnusWeapon::UnlinkAnimLayers(USkeletalMeshComponent* Mesh)
+{
+	if (!Mesh) return;
+
+	if (FullBodyLocomotionLayerClass)
+	{
+		Mesh->UnlinkAnimClassLayers(FullBodyLocomotionLayerClass);
+	}
+	if (UpperBodyAnimLayerClass)
+	{
+		Mesh->UnlinkAnimClassLayers(UpperBodyAnimLayerClass);
 	}
 }
