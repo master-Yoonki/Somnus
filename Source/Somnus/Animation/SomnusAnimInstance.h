@@ -113,4 +113,7 @@ protected:
 	
 	UPROPERTY(BlueprintReadOnly, Category = "Jump")
 	float TimeFalling;
+
+	UPROPERTY(BlueprintReadOnly, Category = "State")
+	bool bIsAiming;
 };

@@ -5,7 +5,10 @@
 #include "Animation/SomnusAnimInstance.h"
 
 #include "KismetAnimationLibrary.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemInterface.h"
 #include "Character/SomnusCharacter.h"
+#include "Core/SomnusGameplayTags.h"
 #include "Equipment/SomnusWeapon.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/Character.h"
@@ -52,6 +55,10 @@ void USomnusAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 				bHasUpperBodyLayer = false;
 			}
 
+			if (UAbilitySystemComponent* ASC = Character->GetAbilitySystemComponent())
+			{
+				bIsAiming = ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
+			}
 		}
 		UpperBodyBlendWeight = (GroundSpeed > 0.0f) ? 1.0f : 0.0f;
 		UpdateJumpingData(DeltaSeconds);
@@ -86,6 +93,8 @@ void USomnusAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 			
 			this->TimeFalling = MainInstance->TimeFalling;
 			this->TimeToJumpApex = MainInstance->TimeToJumpApex;
+
+			this->bIsAiming = MainInstance->bIsAiming;
 		}
 	}
 }

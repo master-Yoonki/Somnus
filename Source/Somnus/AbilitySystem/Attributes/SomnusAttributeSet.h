@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "AttributeSet.h"
 #include "AbilitySystemComponent.h"
+#include "GameplayEffectExtension.h"
 #include "SomnusAttributeSet.generated.h"
 
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnAttributeChangedDelegate, float /*CurrentValue*/, float /*MaxValue*/);
@@ -37,6 +38,9 @@ protected:
     // Clamp attribute values before they are applied
     virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
 
+    // Process damage after GE execution: reads IncomingDamage, subtracts from Health, then zeroes it out
+    virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
+
     virtual void PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue) override;
     
 public:
@@ -59,6 +63,12 @@ public:
     UPROPERTY(BlueprintReadOnly, Category = "Attributes|Stamina", ReplicatedUsing = OnRep_MaxStamina)
     FGameplayAttributeData MaxStamina;
     ATTRIBUTE_ACCESSORS(USomnusAttributeSet, MaxStamina)
+
+    // Meta attribute — temporary damage bucket, not replicated.
+    // GE sets this value; PostGameplayEffectExecute subtracts it from Health.
+    UPROPERTY(BlueprintReadOnly, Category = "Attributes|Damage")
+    FGameplayAttributeData IncomingDamage;
+    ATTRIBUTE_ACCESSORS(USomnusAttributeSet, IncomingDamage)
 
 protected:
     // Replication functions (Called on clients when values change on the server)

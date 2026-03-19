@@ -3,6 +3,10 @@
 
 #include "AbilitySystem/Abilities/SomnusGA_MeleeAttack.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
+#include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemBlueprintLibrary.h"
+#include "Core/SomnusGameplayTags.h"
 
 USomnusGA_MeleeAttack::USomnusGA_MeleeAttack()
 {
@@ -31,6 +35,12 @@ void USomnusGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Han
 	MontageTask->OnCancelled.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCancelled);
 
 	MontageTask->ReadyForActivation();
+
+	// Listen for melee hit events from the MeleeTrace anim notify state
+	UAbilityTask_WaitGameplayEvent* WaitHitTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+		this, SomnusTags::Event_Melee_Hit, nullptr, true);
+	WaitHitTask->EventReceived.AddDynamic(this, &USomnusGA_MeleeAttack::OnMeleeHit);
+	WaitHitTask->ReadyForActivation();
 }
 
 void USomnusGA_MeleeAttack::OnMontageCompleted()
@@ -41,4 +51,26 @@ void USomnusGA_MeleeAttack::OnMontageCompleted()
 void USomnusGA_MeleeAttack::OnMontageCancelled()
 {
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+}
+
+void USomnusGA_MeleeAttack::OnMeleeHit(FGameplayEventData Payload)
+{
+	if (!DamageEffectClass || !Payload.Target)
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(
+		const_cast<AActor*>(Payload.Target.Get()));
+	if (!TargetASC)
+	{
+		return;
+	}
+
+	FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(DamageEffectClass);
+	if (SpecHandle.IsValid())
+	{
+		SpecHandle.Data->SetSetByCallerMagnitude(SomnusTags::Data_Damage, DamageAmount);
+		TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+	}
 }

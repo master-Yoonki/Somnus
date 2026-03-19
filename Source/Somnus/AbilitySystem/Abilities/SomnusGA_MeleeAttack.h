@@ -4,7 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystem/SomnusGameplayAbility.h"
+#include "GameplayEffectTypes.h"
 #include "SomnusGA_MeleeAttack.generated.h"
+
+class UGameplayEffect;
 
 /**
  * Melee attack ability that plays an attack montage.
@@ -29,10 +32,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Animation")
 	float MontagePlayRate = 1.0f;
 
+	// Damage GE to apply on hit (should use SetByCaller with Data.Damage tag)
+	UPROPERTY(EditDefaultsOnly, Category = "Damage")
+	TSubclassOf<UGameplayEffect> DamageEffectClass;
+
+	// Damage amount passed to the GE via SetByCaller
+	UPROPERTY(EditDefaultsOnly, Category = "Damage")
+	float DamageAmount = 20.0f;
+
 private:
 	UFUNCTION()
 	void OnMontageCompleted();
 
 	UFUNCTION()
 	void OnMontageCancelled();
+
+	UFUNCTION()
+	void OnMeleeHit(FGameplayEventData Payload);
 };

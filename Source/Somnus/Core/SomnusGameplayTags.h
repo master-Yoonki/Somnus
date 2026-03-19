@@ -12,6 +12,9 @@ namespace SomnusTags
 	// Equipment identity
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipped_Weapon_Bat);
 
+	// Data — SetByCaller keys
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage);
+
 	// Events
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Melee_Hit);
 

@@ -46,6 +46,24 @@ void USomnusAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute
 	}
 }
 
+void USomnusAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
+{
+	Super::PostGameplayEffectExecute(Data);
+
+	if (Data.EvaluatedData.Attribute == GetIncomingDamageAttribute())
+	{
+		const float DamageDone = GetIncomingDamage();
+		SetIncomingDamage(0.0f);
+
+		if (DamageDone > 0.0f)
+		{
+			const float NewHealth = FMath::Clamp(GetHealth() - DamageDone, 0.0f, GetMaxHealth());
+			SetHealth(NewHealth);
+			OnHealthChanged.Broadcast(NewHealth, GetMaxHealth());
+		}
+	}
+}
+
 void USomnusAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue)
 {
 	Super::PostAttributeChange(Attribute, OldValue, NewValue);
@@ -64,6 +82,7 @@ void USomnusAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribut
 void USomnusAttributeSet::OnRep_Health(const FGameplayAttributeData& OldHealth)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(USomnusAttributeSet, Health, OldHealth);
+	OnHealthChanged.Broadcast(GetHealth(), GetMaxHealth());
 }
 
 void USomnusAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHealth)
@@ -74,6 +93,7 @@ void USomnusAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldMaxHe
 void USomnusAttributeSet::OnRep_Stamina(const FGameplayAttributeData& OldStamina)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(USomnusAttributeSet, Stamina, OldStamina);
+	OnStaminaChanged.Broadcast(GetStamina(), GetMaxStamina());
 }
 
 void USomnusAttributeSet::OnRep_MaxStamina(const FGameplayAttributeData& OldMaxStamina)

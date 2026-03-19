@@ -8,6 +8,9 @@ namespace SomnusTags
 	// Equipment identity
 	UE_DEFINE_GAMEPLAY_TAG(Equipped_Weapon_Bat, "Equipped.Weapon.Bat");
 
+	// Data — SetByCaller keys
+	UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
+
 	// Events
 	UE_DEFINE_GAMEPLAY_TAG(Event_Melee_Hit, "Event.Melee.Hit");
 
