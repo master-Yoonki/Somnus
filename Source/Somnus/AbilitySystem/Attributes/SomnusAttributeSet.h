@@ -64,6 +64,11 @@ public:
     FGameplayAttributeData MaxStamina;
     ATTRIBUTE_ACCESSORS(USomnusAttributeSet, MaxStamina)
 
+    // Stamina regenerated per tick (used as attribute-based magnitude by the regen GE)
+    UPROPERTY(BlueprintReadOnly, Category = "Attributes|Stamina", ReplicatedUsing = OnRep_StaminaRegenRate)
+    FGameplayAttributeData StaminaRegenRate;
+    ATTRIBUTE_ACCESSORS(USomnusAttributeSet, StaminaRegenRate)
+
     // Meta attribute — temporary damage bucket, not replicated.
     // GE sets this value; PostGameplayEffectExecute subtracts it from Health.
     UPROPERTY(BlueprintReadOnly, Category = "Attributes|Damage")
@@ -83,4 +88,7 @@ protected:
 
     UFUNCTION()
     virtual void OnRep_MaxStamina(const FGameplayAttributeData& OldMaxStamina);
+
+    UFUNCTION()
+    virtual void OnRep_StaminaRegenRate(const FGameplayAttributeData& OldStaminaRegenRate);
 };

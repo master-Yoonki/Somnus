@@ -10,6 +10,7 @@
 #include "SomnusCharacter.generated.h"
 
 class ASomnusWeapon;
+class UGameplayEffect;
 class USomnusInputConfig;
 enum class ESomnusGait : uint8;
 
@@ -106,6 +107,10 @@ public:
 	ESomnusGait GetCurrentGait() const { return CurrentGait; }
 
 protected:
+	// GEs applied to the ASC at possession (e.g., stamina regen, passive buffs)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
+	TArray<TSubclassOf<UGameplayEffect>> DefaultGameplayEffects;
+
 	// Default full body locomotion layer (ABP_UnarmedLocomotion — always re-linked on unequip)
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
 	TSubclassOf<UAnimInstance> DefaultLocomotionLayerClass;

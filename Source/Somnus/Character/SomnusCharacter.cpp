@@ -16,6 +16,7 @@
 #include "Core/SomnusGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "Equipment/SomnusWeapon.h"
+#include "GameplayEffect.h"
 
 ASomnusCharacter::ASomnusCharacter()
 {
@@ -63,7 +64,22 @@ void ASomnusCharacter::PossessedBy(AController* NewController)
 	// Owner = PlayerState, Avatar = Character
 	if (ASomnusPlayerState* PS = GetPlayerState<ASomnusPlayerState>())
 	{
-		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
+		UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent();
+		ASC->InitAbilityActorInfo(PS, this);
+
+		// Apply default GEs (stamina regen, passive buffs, etc.)
+		for (const TSubclassOf<UGameplayEffect>& GEClass : DefaultGameplayEffects)
+		{
+			if (!GEClass) continue;
+			FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
+			ContextHandle.AddSourceObject(this);
+			FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(GEClass, 1.0f, ContextHandle);
+			if (SpecHandle.IsValid())
+			{
+				ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+			}
+		}
+
 		if (IsLocallyControlled())
 		{
 			AddInputMappingContext();

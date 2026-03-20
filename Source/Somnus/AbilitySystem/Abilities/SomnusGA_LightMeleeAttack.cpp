@@ -10,4 +10,6 @@ USomnusGA_LightMeleeAttack::USomnusGA_LightMeleeAttack()
 	ActivationRequiredTags.AddTag(SomnusTags::Weapon_Enable_LightAttack);
 	ActivationRequiredTags.AddTag(SomnusTags::State_Aiming);
 	ActivationBlockedTags.AddTag(SomnusTags::Ability_Melee_Light);
+
+	StaminaCost = 15.0f;
 }

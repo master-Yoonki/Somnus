@@ -10,6 +10,7 @@ namespace SomnusTags
 
 	// Data — SetByCaller keys
 	UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
+	UE_DEFINE_GAMEPLAY_TAG(Data_StaminaCost, "Data.StaminaCost");
 
 	// Events
 	UE_DEFINE_GAMEPLAY_TAG(Event_Melee_Hit, "Event.Melee.Hit");

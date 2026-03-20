@@ -10,4 +10,6 @@ USomnusGA_HeavyMeleeAttack::USomnusGA_HeavyMeleeAttack()
 	ActivationRequiredTags.AddTag(SomnusTags::Weapon_Enable_HeavyAttack);
 	ActivationBlockedTags.AddTag(SomnusTags::State_Aiming);
 	ActivationBlockedTags.AddTag(SomnusTags::Ability_Melee_Heavy);
+
+	StaminaCost = 25.0f;
 }

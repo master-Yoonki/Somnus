@@ -11,6 +11,7 @@ USomnusAttributeSet::USomnusAttributeSet()
 	InitMaxHealth(100.0f);
 	InitStamina(100.0f);
 	InitMaxStamina(100.0f);
+	InitStaminaRegenRate(1.0f);
 }
 
 void USomnusAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -22,6 +23,7 @@ void USomnusAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& 
 	DOREPLIFETIME_CONDITION_NOTIFY(USomnusAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(USomnusAttributeSet, Stamina, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(USomnusAttributeSet, MaxStamina, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(USomnusAttributeSet, StaminaRegenRate, COND_None, REPNOTIFY_Always);
 }
 
 void USomnusAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
@@ -43,6 +45,10 @@ void USomnusAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute
 	else if (Attribute == GetMaxStaminaAttribute())
 	{
 		NewValue = FMath::Max(NewValue, 1.0f);
+	}
+	else if (Attribute == GetStaminaRegenRateAttribute())
+	{
+		NewValue = FMath::Max(NewValue, 0.0f);
 	}
 }
 
@@ -99,4 +105,9 @@ void USomnusAttributeSet::OnRep_Stamina(const FGameplayAttributeData& OldStamina
 void USomnusAttributeSet::OnRep_MaxStamina(const FGameplayAttributeData& OldMaxStamina)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(USomnusAttributeSet, MaxStamina, OldMaxStamina);
+}
+
+void USomnusAttributeSet::OnRep_StaminaRegenRate(const FGameplayAttributeData& OldStaminaRegenRate)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(USomnusAttributeSet, StaminaRegenRate, OldStaminaRegenRate);
 }

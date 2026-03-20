@@ -14,6 +14,7 @@ namespace SomnusTags
 
 	// Data — SetByCaller keys
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_Damage);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_StaminaCost);
 
 	// Events
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Melee_Hit);
