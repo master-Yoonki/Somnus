@@ -46,6 +46,29 @@ ASomnusCharacter::ASomnusCharacter()
 	CurrentGait = ESomnusGait::None;
 }
 
+void ASomnusCharacter::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	// Toggle rotation mode based on aiming state
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		const bool bAiming = ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
+		UCharacterMovementComponent* CMC = GetCharacterMovement();
+
+		if (bAiming)
+		{
+			CMC->bOrientRotationToMovement = false;
+			CMC->bUseControllerDesiredRotation = true;
+		}
+		else
+		{
+			CMC->bOrientRotationToMovement = true;
+			CMC->bUseControllerDesiredRotation = false;
+		}
+	}
+}
+
 UAbilitySystemComponent* ASomnusCharacter::GetAbilitySystemComponent() const
 {
 	// Safely retrieve the ASC from the PlayerState

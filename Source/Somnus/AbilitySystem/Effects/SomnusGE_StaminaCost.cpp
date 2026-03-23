@@ -3,7 +3,7 @@
 
 #include "AbilitySystem/Effects/SomnusGE_StaminaCost.h"
 #include "AbilitySystem/Attributes/SomnusAttributeSet.h"
-#include "Core/SomnusGameplayTags.h"
+#include "AbilitySystem/Effects/SomnusMMC_AbilityCost.h"
 
 USomnusGE_StaminaCost::USomnusGE_StaminaCost()
 {
@@ -12,9 +12,10 @@ USomnusGE_StaminaCost::USomnusGE_StaminaCost()
 	FGameplayModifierInfo StaminaModifier;
 	StaminaModifier.Attribute = USomnusAttributeSet::GetStaminaAttribute();
 	StaminaModifier.ModifierOp = EGameplayModOp::Additive;
-	FSetByCallerFloat SetByCaller;
-	SetByCaller.DataTag = SomnusTags::Data_StaminaCost;
-	StaminaModifier.ModifierMagnitude = FGameplayEffectModifierMagnitude(SetByCaller);
+
+	FCustomCalculationBasedFloat CustomCalc;
+	CustomCalc.CalculationClassMagnitude = USomnusMMC_AbilityCost::StaticClass();
+	StaminaModifier.ModifierMagnitude = FGameplayEffectModifierMagnitude(CustomCalc);
 
 	Modifiers.Add(StaminaModifier);
 }

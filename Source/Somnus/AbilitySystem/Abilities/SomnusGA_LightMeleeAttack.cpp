@@ -6,7 +6,7 @@
 
 USomnusGA_LightMeleeAttack::USomnusGA_LightMeleeAttack()
 {
-	AbilityTags.AddTag(SomnusTags::Ability_Melee_Light);
+	SetAssetTags(FGameplayTagContainer(SomnusTags::Ability_Melee_Light));
 	ActivationRequiredTags.AddTag(SomnusTags::Weapon_Enable_LightAttack);
 	ActivationRequiredTags.AddTag(SomnusTags::State_Aiming);
 	ActivationBlockedTags.AddTag(SomnusTags::Ability_Melee_Light);

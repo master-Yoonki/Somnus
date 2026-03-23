@@ -29,6 +29,8 @@ public:
 	// Implement IAbilitySystemInterface to fetch ASC from PlayerState
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
+	virtual void Tick(float DeltaTime) override;
+
 	// Called when the server assigns a controller to this character
 	virtual void PossessedBy(AController* NewController) override;
 

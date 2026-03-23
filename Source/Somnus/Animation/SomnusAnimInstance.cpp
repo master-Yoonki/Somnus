@@ -59,6 +59,13 @@ void USomnusAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 			{
 				bIsAiming = ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
 			}
+
+			// Calculate aim offset yaw/pitch from controller-to-actor rotation delta
+			const FRotator AimRotation = Character->GetBaseAimRotation();
+			const FRotator ActorRotation = Character->GetActorRotation();
+			const FRotator Delta = (AimRotation - ActorRotation).GetNormalized();
+			AimYaw = FMath::Clamp(Delta.Yaw, -180.0f, 180.0f);
+			AimPitch = FMath::Clamp(Delta.Pitch, -90.0f, 90.0f);
 		}
 		UpperBodyBlendWeight = (GroundSpeed > 0.0f) ? 1.0f : 0.0f;
 		UpdateJumpingData(DeltaSeconds);
@@ -95,6 +102,8 @@ void USomnusAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 			this->TimeToJumpApex = MainInstance->TimeToJumpApex;
 
 			this->bIsAiming = MainInstance->bIsAiming;
+			this->AimYaw = MainInstance->AimYaw;
+			this->AimPitch = MainInstance->AimPitch;
 		}
 	}
 }

@@ -116,4 +116,10 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "State")
 	bool bIsAiming;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Aim")
+	float AimYaw;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Aim")
+	float AimPitch;
 };

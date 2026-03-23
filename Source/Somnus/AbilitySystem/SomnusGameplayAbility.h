@@ -9,7 +9,7 @@
 /**
  * Base GameplayAbility for Project Somnus.
  * All project abilities should inherit from this class.
- * Provides SetByCaller stamina cost support — set StaminaCost > 0 to consume stamina on commit.
+ * Cost is handled via a shared Cost GE + MMC that reads StaminaCost from the ability instance.
  */
 UCLASS(Abstract)
 class SOMNUS_API USomnusGameplayAbility : public UGameplayAbility
@@ -19,8 +19,7 @@ class SOMNUS_API USomnusGameplayAbility : public UGameplayAbility
 public:
 	USomnusGameplayAbility();
 
-	virtual bool CheckCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
-	virtual void ApplyCost(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo, const FGameplayAbilityActivationInfo ActivationInfo) const override;
+	float GetStaminaCost() const { return StaminaCost; }
 
 protected:
 	// Stamina consumed when CommitAbility() is called. 0 = no cost.

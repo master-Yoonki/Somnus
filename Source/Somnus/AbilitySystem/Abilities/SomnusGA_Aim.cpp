@@ -6,7 +6,7 @@
 
 USomnusGA_Aim::USomnusGA_Aim()
 {
-	AbilityTags.AddTag(SomnusTags::Ability_Aim);
+	SetAssetTags(FGameplayTagContainer(SomnusTags::Ability_Aim));
 	ActivationRequiredTags.AddTag(SomnusTags::Weapon_Enable_Aim);
 
 	// State.Aiming is automatically added to the ASC while this ability is active

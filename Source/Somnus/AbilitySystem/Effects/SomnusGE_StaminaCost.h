@@ -7,8 +7,8 @@
 #include "SomnusGE_StaminaCost.generated.h"
 
 /**
- * Instant GE that subtracts Stamina using SetByCaller magnitude (Data.StaminaCost tag).
- * Used as the cost GE for abilities that consume stamina.
+ * Instant GE that subtracts Stamina via MMC (reads StaminaCost from the ability instance).
+ * Shared across all abilities — each ability's StaminaCost property determines the cost.
  */
 UCLASS()
 class SOMNUS_API USomnusGE_StaminaCost : public UGameplayEffect

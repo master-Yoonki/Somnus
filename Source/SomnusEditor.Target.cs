@@ -11,5 +11,10 @@ public class SomnusEditorTarget : TargetRules
 		DefaultBuildSettings = BuildSettingsVersion.V6;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_7;
 		ExtraModuleNames.Add("Somnus");
+
+		// Disable optimizations for easier debugging without DebugGame linker issues
+		// (DebugGame config has unresolved engine symbols with installed engine builds)
+		bOverrideBuildEnvironment = true;
+		AdditionalCompilerArguments = "/Od";  // Disable optimizations (MSVC)
 	}
 }

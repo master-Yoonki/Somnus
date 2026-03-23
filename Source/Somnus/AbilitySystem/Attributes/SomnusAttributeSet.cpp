@@ -65,7 +65,7 @@ void USomnusAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCall
 		{
 			const float NewHealth = FMath::Clamp(GetHealth() - DamageDone, 0.0f, GetMaxHealth());
 			SetHealth(NewHealth);
-			OnHealthChanged.Broadcast(NewHealth, GetMaxHealth());
+			// OnHealthChanged.Broadcast(NewHealth, GetMaxHealth());
 		}
 	}
 }
