@@ -24,6 +24,14 @@ enum class ELocomotionDirection : uint8
 	Right		UMETA(DisplayName = "Right")
 };
 
+UENUM(BlueprintType)
+enum class ERootYawOffsetMode : uint8
+{
+	Hold		UMETA(DisplayName = "Hold"),
+	Accumulate	UMETA(DisplayName = "Accumulate"),
+	BlendOut	UMETA(DisplayName = "BlendOut"),
+};
+
 UCLASS()
 class SOMNUS_API USomnusAnimInstance : public UAnimInstance
 {
@@ -32,14 +40,26 @@ class SOMNUS_API USomnusAnimInstance : public UAnimInstance
 public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+	virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
 	
 protected:
+	// Game thread only — line trace for distance matching
+	void UpdateDistanceToGround();
+
+	// Thread-safe update functions — read cached pointers, write local properties
 	void UpdateLocationData();
 	void UpdateVelocityData();
 	void UpdateAccelerationData();
+	void UpdateLocomotionData();
+	void UpdateRotationData();
+	void UpdateWeaponData();
+	void UpdateAimingData();
 	void UpdateJumpingData(float DeltaSeconds);
-	// Calculates the new direction with a sticky deadzone to prevent flickering
+	void CopyFromMainInstance(const USomnusAnimInstance* MainInstance);
 	ELocomotionDirection CalculateDirectionWithHysteresis(float Angle, ELocomotionDirection CurrentDir, float Deadzone = 20.0f);
+
+	UPROPERTY(Transient)
+	TObjectPtr<ASomnusCharacter> CachedCharacter;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCharacterMovementComponent> MovementComponent;
@@ -122,4 +142,18 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Aim")
 	float AimPitch;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Rotation")
+	FRotator WorldRotation;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Rotation")
+	float ActorYaw;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Rotation")
+	float LastFrameActorYaw;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "Rotation")
+	float DeltaActorYaw;
+	
+	bool bIsInitialized;
 };

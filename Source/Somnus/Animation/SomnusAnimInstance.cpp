@@ -13,20 +13,29 @@
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "Kismet/KismetMathLibrary.h"
 
 void USomnusAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
-	if (ACharacter* OwnerCharacter = Cast<ACharacter>(TryGetPawnOwner()))
+	CachedCharacter = Cast<ASomnusCharacter>(TryGetPawnOwner());
+	if (CachedCharacter)
 	{
-		MovementComponent = OwnerCharacter->GetCharacterMovement();
+		MovementComponent = CachedCharacter->GetCharacterMovement();
 	}
+	bIsInitialized = false;
 }
 
 void USomnusAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
+
+	// Line trace must run on game thread
+	UpdateDistanceToGround();
+}
+
+void USomnusAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
+{
+	Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
 	USkeletalMeshComponent* MeshComp = GetSkelMeshComponent();
 	if (!MeshComp) return;
 
@@ -35,77 +44,22 @@ void USomnusAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		UpdateLocationData();
 		UpdateVelocityData();
 		UpdateAccelerationData();
-		if (ASomnusCharacter* Character = Cast<ASomnusCharacter>(MeshComp->GetOwner()))
-		{
-			Gait = Character->GetCurrentGait();
-
-			VelocityLocomotionAngle  = UKismetAnimationLibrary::CalculateDirection(Velocity, GetOwningActor()->GetActorRotation());
-
-			// Update direction with 20 degrees of deadzone
-			CurrentDirection = CalculateDirectionWithHysteresis(VelocityLocomotionAngle, CurrentDirection, 20.0f);
-
-			if (ASomnusWeapon* Weapon = Character->GetEquippedWeapon())
-			{
-				EquippedWeaponType = Weapon->GetWeaponType();
-				bHasUpperBodyLayer = Weapon->HasUpperBodyLayer();
-			}
-			else
-			{
-				EquippedWeaponType = ESomnusWeaponType::None;
-				bHasUpperBodyLayer = false;
-			}
-
-			if (UAbilitySystemComponent* ASC = Character->GetAbilitySystemComponent())
-			{
-				bIsAiming = ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
-			}
-
-			// Calculate aim offset yaw/pitch from controller-to-actor rotation delta
-			const FRotator AimRotation = Character->GetBaseAimRotation();
-			const FRotator ActorRotation = Character->GetActorRotation();
-			const FRotator Delta = (AimRotation - ActorRotation).GetNormalized();
-			AimYaw = FMath::Clamp(Delta.Yaw, -180.0f, 180.0f);
-			AimPitch = FMath::Clamp(Delta.Pitch, -90.0f, 90.0f);
-		}
-		UpperBodyBlendWeight = (GroundSpeed > 0.0f) ? 1.0f : 0.0f;
+		UpdateLocomotionData();
+		UpdateRotationData();
+		UpdateWeaponData();
+		UpdateAimingData();
 		UpdateJumpingData(DeltaSeconds);
 	}
 	else
 	{
-		if (USomnusAnimInstance* MainInstance = Cast<USomnusAnimInstance>(MeshComp->GetAnimInstance()))
+		if (const USomnusAnimInstance* MainInstance = Cast<USomnusAnimInstance>(MeshComp->GetAnimInstance()))
 		{
-			this->Location = MainInstance->Location;
-			this->DeltaLocation = MainInstance->DeltaLocation;
-			
-			this->Velocity = MainInstance->Velocity;
-			this->Velocity2D = MainInstance->Velocity2D;
-			this->GroundSpeed = MainInstance->GroundSpeed;
-			
-			this->Acceleration = MainInstance->Acceleration;
-			this->Acceleration2D = MainInstance->Acceleration2D;
-			this->bHasAcceleration = MainInstance->bHasAcceleration;
-			
-			this->Gait = MainInstance->Gait;
-			this->VelocityLocomotionAngle = MainInstance->VelocityLocomotionAngle;
-			this->CurrentDirection = MainInstance->CurrentDirection;
-			
-			this->EquippedWeaponType = MainInstance->EquippedWeaponType;
-			this->bHasUpperBodyLayer = MainInstance->bHasUpperBodyLayer;
-			this->UpperBodyBlendWeight = MainInstance->UpperBodyBlendWeight;
-			this->DistanceToGround = MainInstance->DistanceToGround;
-			
-			this->bIsJumping = MainInstance->bIsJumping;
-			this->bIsOnAir = MainInstance->bIsOnAir;
-			this->bIsFalling = MainInstance->bIsFalling;
-			
-			this->TimeFalling = MainInstance->TimeFalling;
-			this->TimeToJumpApex = MainInstance->TimeToJumpApex;
-
-			this->bIsAiming = MainInstance->bIsAiming;
-			this->AimYaw = MainInstance->AimYaw;
-			this->AimPitch = MainInstance->AimPitch;
+			CopyFromMainInstance(MainInstance);
 		}
 	}
+
+	UpperBodyBlendWeight = (GroundSpeed > 0.0f) ? 1.0f : 0.0f;
+	bIsInitialized = true;
 }
 
 UCharacterMovementComponent* USomnusAnimInstance::GetCharacterMovementComponent() const
@@ -113,36 +67,123 @@ UCharacterMovementComponent* USomnusAnimInstance::GetCharacterMovementComponent(
 	return MovementComponent;
 }
 
+void USomnusAnimInstance::UpdateLocomotionData()
+{
+	if (!CachedCharacter) return;
+	Gait = CachedCharacter->GetCurrentGait();
+	VelocityLocomotionAngle = UKismetAnimationLibrary::CalculateDirection(Velocity, CachedCharacter->GetActorRotation());
+	CurrentDirection = CalculateDirectionWithHysteresis(VelocityLocomotionAngle, CurrentDirection, 20.0f);
+}
+
+void USomnusAnimInstance::UpdateRotationData()
+{
+	if (!CachedCharacter) return;
+	WorldRotation = CachedCharacter->GetActorRotation();
+	LastFrameActorYaw = ActorYaw;
+	ActorYaw = WorldRotation.Yaw;
+	if (bIsInitialized)
+	{
+		DeltaActorYaw = ActorYaw - LastFrameActorYaw;
+	}
+}
+
+void USomnusAnimInstance::UpdateWeaponData()
+{
+	if (!CachedCharacter) return;
+	if (ASomnusWeapon* Weapon = CachedCharacter->GetEquippedWeapon())
+	{
+		EquippedWeaponType = Weapon->GetWeaponType();
+		bHasUpperBodyLayer = Weapon->HasUpperBodyLayer();
+	}
+	else
+	{
+		EquippedWeaponType = ESomnusWeaponType::None;
+		bHasUpperBodyLayer = false;
+	}
+}
+
+void USomnusAnimInstance::UpdateAimingData()
+{
+	if (!CachedCharacter) return;
+	if (UAbilitySystemComponent* ASC = CachedCharacter->GetAbilitySystemComponent())
+	{
+		bIsAiming = ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
+	}
+
+	const FRotator AimRotation = CachedCharacter->GetBaseAimRotation();
+	const FRotator ActorRotation = CachedCharacter->GetActorRotation();
+	const FRotator Delta = (AimRotation - ActorRotation).GetNormalized();
+	AimYaw = FMath::Clamp(Delta.Yaw, -180.0f, 180.0f);
+	AimPitch = FMath::Clamp(Delta.Pitch, -90.0f, 90.0f);
+}
+
+void USomnusAnimInstance::CopyFromMainInstance(const USomnusAnimInstance* MainInstance)
+{
+	// Location
+	Location = MainInstance->Location;
+	DeltaLocation = MainInstance->DeltaLocation;
+
+	// Velocity
+	Velocity = MainInstance->Velocity;
+	Velocity2D = MainInstance->Velocity2D;
+	GroundSpeed = MainInstance->GroundSpeed;
+
+	// Acceleration
+	Acceleration = MainInstance->Acceleration;
+	Acceleration2D = MainInstance->Acceleration2D;
+	bHasAcceleration = MainInstance->bHasAcceleration;
+
+	// Locomotion
+	Gait = MainInstance->Gait;
+	VelocityLocomotionAngle = MainInstance->VelocityLocomotionAngle;
+	CurrentDirection = MainInstance->CurrentDirection;
+
+	// Rotation
+	WorldRotation = MainInstance->WorldRotation;
+	ActorYaw = MainInstance->ActorYaw;
+	DeltaActorYaw = MainInstance->DeltaActorYaw;
+
+	// Weapon
+	EquippedWeaponType = MainInstance->EquippedWeaponType;
+	bHasUpperBodyLayer = MainInstance->bHasUpperBodyLayer;
+	UpperBodyBlendWeight = MainInstance->UpperBodyBlendWeight;
+
+	// Jump
+	DistanceToGround = MainInstance->DistanceToGround;
+	bIsJumping = MainInstance->bIsJumping;
+	bIsOnAir = MainInstance->bIsOnAir;
+	bIsFalling = MainInstance->bIsFalling;
+	TimeFalling = MainInstance->TimeFalling;
+	TimeToJumpApex = MainInstance->TimeToJumpApex;
+
+	// Aiming
+	bIsAiming = MainInstance->bIsAiming;
+	AimYaw = MainInstance->AimYaw;
+	AimPitch = MainInstance->AimPitch;
+
+}
+
 void USomnusAnimInstance::UpdateLocationData()
 {
-	if (AActor* Actor = GetOwningActor())
-	{
-		FVector LastFrameLocation = Location;
-		Location = Actor->GetActorLocation();
-		DeltaLocation = Location - LastFrameLocation;
-	}
+	if (!CachedCharacter) return;
+	FVector LastFrameLocation = Location;
+	Location = CachedCharacter->GetActorLocation();
+	DeltaLocation = Location - LastFrameLocation;
 }
 
 void USomnusAnimInstance::UpdateVelocityData()
 {
-	if (ACharacter* Character = Cast<ACharacter>(TryGetPawnOwner()))
-	{
-		Velocity = Character->GetVelocity();
-		Velocity2D = FVector(Velocity.X, Velocity.Y, 0.0f);
-		GroundSpeed = Velocity2D.Size2D();
-	}
+	if (!CachedCharacter) return;
+	Velocity = CachedCharacter->GetVelocity();
+	Velocity2D = FVector(Velocity.X, Velocity.Y, 0.0f);
+	GroundSpeed = Velocity2D.Size2D();
 }
 
 void USomnusAnimInstance::UpdateAccelerationData()
 {
-	if (ACharacter* Character = Cast<ACharacter>(TryGetPawnOwner()))
-	{
-		if (UCharacterMovementComponent* CharacterMovement = Character->GetCharacterMovement())
-		{
-			Acceleration = CharacterMovement->GetCurrentAcceleration();
-			Acceleration2D = FVector(Acceleration.X, Acceleration.Y, 0.0f);
-		}
-	}
+	if (!MovementComponent) return;
+	Acceleration = MovementComponent->GetCurrentAcceleration();
+	Acceleration2D = FVector(Acceleration.X, Acceleration.Y, 0.0f);
 	bHasAcceleration = Acceleration.Size2D() > 0.0f;
 }
 
@@ -151,29 +192,34 @@ void USomnusAnimInstance::UpdateJumpingData(float DeltaSeconds)
 	if (UCharacterMovementComponent* CharacterMovement = GetCharacterMovementComponent())
 	{
 		bIsOnAir = (CharacterMovement->MovementMode == EMovementMode::MOVE_Falling);
-		
+
 		if (bIsOnAir)
 		{
 			bIsJumping = (Velocity.Z > 0.f);
 			bIsFalling = (Velocity.Z < 0.f);
 		}
-		
+		else
+		{
+			bIsJumping = false;
+			bIsFalling = false;
+		}
+
 		if (bIsJumping)
 		{
 			const float VelocityZ = Velocity.Z;
-			const float Gravity = 
+			const float Gravity =
 				FMath::Min(
-					CharacterMovement->GetGravityZ() * 
+					CharacterMovement->GetGravityZ() *
 					CharacterMovement->GravityScale,
-					0.1f
-					); 
-			TimeToJumpApex = VelocityZ / Gravity; 
+					-0.1f
+					);
+			TimeToJumpApex = VelocityZ / Gravity;
 		}
 		else
 		{
 			TimeToJumpApex = 0.f;
 		}
-		
+
 		if (bIsFalling)
 		{
 			TimeFalling += DeltaSeconds;
@@ -182,50 +228,42 @@ void USomnusAnimInstance::UpdateJumpingData(float DeltaSeconds)
 		{
 			TimeFalling = 0.f;
 		}
-		
-		// Ray cast to ground for distance matching
-		if (ACharacter* Character = Cast<ACharacter>(TryGetPawnOwner()))
-		{
-			if (bIsOnAir)
-			{
-				// 1. Setup the Line Trace
-				FVector StartLocation = Character->GetActorLocation();
-				// Cast a ray 20 meters downwards
-				FVector EndLocation = StartLocation + FVector(0.0f, 0.0f, -2000.0f); 
-            
-				FHitResult HitResult;
-				FCollisionQueryParams CollisionParams;
-				CollisionParams.AddIgnoredActor(Character); // Don't hit ourselves!
+	}
+}
 
-				// 2. Fire the raycast (using Visibility channel, or a custom ground channel)
-				bool bHit = GetWorld()->LineTraceSingleByChannel(
-					HitResult, 
-					StartLocation, 
-					EndLocation, 
-					ECC_Visibility, 
-					CollisionParams);
+void USomnusAnimInstance::UpdateDistanceToGround()
+{
+	if (!CachedCharacter || !MovementComponent) return;
 
-				if (bHit)
-				{
-					// 3. Calculate exact distance from FEET to ground
-					// (Actor's Z minus Capsule's Half Height gives us the Z of the feet)
-					float CapsuleHalfHeight = Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
-					float FeetZ = StartLocation.Z - CapsuleHalfHeight;
-                
-					// The actual distance from feet to the impact point
-					DistanceToGround = FMath::Max(0.0f, FeetZ - HitResult.ImpactPoint.Z);
-				}
-				else
-				{
-					// If we hit nothing, assume we are high in the sky
-					DistanceToGround = -1.0f; // Use -1 or a large number to indicate "no ground"
-				}
-			}
-			else
-			{
-				DistanceToGround = 0.f;
-			}
-		}
+	if (MovementComponent->MovementMode != EMovementMode::MOVE_Falling)
+	{
+		DistanceToGround = 0.f;
+		return;
+	}
+
+	FVector StartLocation = CachedCharacter->GetActorLocation();
+	FVector EndLocation = StartLocation + FVector(0.0f, 0.0f, -2000.0f);
+
+	FHitResult HitResult;
+	FCollisionQueryParams CollisionParams;
+	CollisionParams.AddIgnoredActor(CachedCharacter);
+
+	bool bHit = GetWorld()->LineTraceSingleByChannel(
+		HitResult,
+		StartLocation,
+		EndLocation,
+		ECC_Visibility,
+		CollisionParams);
+
+	if (bHit)
+	{
+		float CapsuleHalfHeight = CachedCharacter->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		float FeetZ = StartLocation.Z - CapsuleHalfHeight;
+		DistanceToGround = FMath::Max(0.0f, FeetZ - HitResult.ImpactPoint.Z);
+	}
+	else
+	{
+		DistanceToGround = -1.0f;
 	}
 }
 
