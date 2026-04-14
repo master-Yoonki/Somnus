@@ -17,6 +17,7 @@
 #include "Equipment/SomnusWeapon.h"
 #include "GameplayEffect.h"
 #include "Abilities/GameplayAbility.h"
+#include "Core/SomnusGameMode.h"
 
 ASomnusCharacter::ASomnusCharacter()
 {
@@ -367,34 +368,69 @@ void ASomnusCharacter::AddInputMappingContext() const
 	}
 }
 
-void ASomnusCharacter::Die()
+void ASomnusCharacter::Die(const FVector& HitDirection)
 {
 	if (IsDead()) return;
 
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
 	if (!ASC) return;
 
+	// --- Server-only GAS logic ---
 	// 1. Cancel all active abilities
 	ASC->CancelAllAbilities();
 
 	// 2. Remove effects tagged with Effect.RemoveOnDeath (regen, buffs, etc.)
 	FGameplayTagContainer EffectTagsToRemove;
 	EffectTagsToRemove.AddTag(SomnusTags::Effect_RemoveOnDeath);
-	int32 NumRemoved = ASC->RemoveActiveEffectsWithGrantedTags(EffectTagsToRemove);
+	ASC->RemoveActiveEffectsWithGrantedTags(EffectTagsToRemove);
 
 	// 3. Add the dead state tag
 	ASC->AddLooseGameplayTag(SomnusTags::State_Dead);
 
-	// 4. Disable collision so the corpse doesn't block
+	// 4. Multicast visual death (ragdoll, impulse, UI) to all machines
+	MulticastDeath(HitDirection);
+}
+
+void ASomnusCharacter::MulticastDeath_Implementation(const FVector& HitDirection)
+{
+	// Disable capsule collision and stop movement
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	GetCharacterMovement()->GravityScale = 0.0f;
-	GetCharacterMovement()->Velocity = FVector::ZeroVector;
+	GetCharacterMovement()->SetMovementMode(MOVE_None);
+
+	// Ragdoll the skeletal mesh
+	GetMesh()->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+	GetMesh()->SetCollisionProfileName(TEXT("Ragdoll"));
+	GetMesh()->SetAllBodiesSimulatePhysics(true);
+	GetMesh()->SetSimulatePhysics(true);
+	GetMesh()->WakeAllRigidBodies();
+
+	// Apply impulse in the hit direction
+	if (!HitDirection.IsNearlyZero())
+	{
+		GetMesh()->AddImpulse(HitDirection * 1500.0f, NAME_None, true);
+	}
+
+	// Notify Blueprint for death UI (owning client only)
+	if (IsLocallyControlled())
+	{
+		OnDeath();
+	}
 }
 
 bool ASomnusCharacter::IsDead() const
 {
 	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
 	return ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Dead);
+}
+
+void ASomnusCharacter::ServerRequestRespawn_Implementation()
+{
+	if (!IsDead()) return;
+
+	if (ASomnusGameMode* GM = GetWorld()->GetAuthGameMode<ASomnusGameMode>())
+	{
+		GM->RequestRespawn(GetController());
+	}
 }
 
 void ASomnusCharacter::BindAttributeCallbacks()

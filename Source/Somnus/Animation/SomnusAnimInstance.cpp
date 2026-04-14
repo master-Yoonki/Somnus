@@ -113,6 +113,7 @@ void USomnusAnimInstance::UpdateAimingData()
 	if (UAbilitySystemComponent* ASC = CachedCharacter->GetAbilitySystemComponent())
 	{
 		bIsAiming = ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
+		bIsDead = ASC->HasMatchingGameplayTag(SomnusTags::State_Dead);
 	}
 
 	const FRotator AimRotation = CachedCharacter->GetBaseAimRotation();
@@ -168,6 +169,8 @@ void USomnusAnimInstance::CopyFromMainInstance(const USomnusAnimInstance* MainIn
 	AimYaw = MainInstance->AimYaw;
 	AimPitch = MainInstance->AimPitch;
 
+	// State
+	bIsDead = MainInstance->bIsDead;
 }
 
 void USomnusAnimInstance::UpdateLocationData()

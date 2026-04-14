@@ -163,5 +163,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Rotation")
 	float DeltaActorYaw;
 	
+	// True when the character has State.Dead tag — ABP can use to disable locomotion
+	UPROPERTY(BlueprintReadOnly, Category = "State")
+	bool bIsDead = false;
+
 	bool bIsInitialized = false;
 };

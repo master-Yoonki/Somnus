@@ -73,7 +73,14 @@ void USomnusAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCall
 			{
 				if (ASomnusCharacter* Character = Cast<ASomnusCharacter>(GetOwningAbilitySystemComponent()->GetAvatarActor()))
 				{
-					Character->Die();
+					// Extract hit direction from the damage effect context
+					FVector HitDirection = FVector::ZeroVector;
+					if (const FHitResult* HitResult = Data.EffectSpec.GetEffectContext().GetHitResult())
+					{
+						// TraceEnd - TraceStart gives the direction the trace was traveling
+						HitDirection = (HitResult->TraceEnd - HitResult->TraceStart).GetSafeNormal();
+					}
+					Character->Die(HitDirection);
 				}
 			}
 		}

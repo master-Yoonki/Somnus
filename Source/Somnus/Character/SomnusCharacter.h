@@ -98,12 +98,21 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "GAS|UI")
 	void UpdateStaminaUI(float CurrentStamina, float MaxStamina);
 
-	// Called when Health reaches zero. Cancels abilities, removes effects, disables collision.
+	// Called when Health reaches zero. Cancels abilities, ragdolls.
+	// HitDirection is the direction of the killing blow (for ragdoll impulse). Zero = no impulse.
 	UFUNCTION(BlueprintCallable, Category = "GAS")
-	virtual void Die();
+	virtual void Die(const FVector& HitDirection = FVector::ZeroVector);
 
 	UFUNCTION(BlueprintPure, Category = "GAS")
 	bool IsDead() const;
+
+	// Blueprint event fired on the owning client when this character dies (for death UI)
+	UFUNCTION(BlueprintImplementableEvent, Category = "GAS")
+	void OnDeath();
+
+	// Client requests respawn — server validates and tells GameMode to spawn a new pawn
+	UFUNCTION(Server, Reliable, Category = "GAS")
+	void ServerRequestRespawn();
 
 	// Getter function for AnimNotify and Abilities to read the weapon data
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
@@ -153,4 +162,9 @@ protected:
 	// Guards against double-granting on repossession/respawn
 	bool bDefaultAbilitiesGiven = false;
 	bool bDefaultEffectsApplied = false;
+
+private:
+	// Multicast: runs ragdoll and visual death effects on all machines
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastDeath(const FVector& HitDirection);
 };

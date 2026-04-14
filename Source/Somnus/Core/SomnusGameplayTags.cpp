@@ -14,6 +14,7 @@ namespace SomnusTags
 
 	// Events
 	UE_DEFINE_GAMEPLAY_TAG(Event_Melee_Hit, "Event.Melee.Hit");
+	UE_DEFINE_GAMEPLAY_TAG(Event_Death, "Event.Death");
 
 	// Weapon-granted permission tags
 	UE_DEFINE_GAMEPLAY_TAG(Weapon_Enable_HeavyAttack, "Weapon.Enable.HeavyAttack");

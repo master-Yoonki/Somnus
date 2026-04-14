@@ -18,6 +18,7 @@ namespace SomnusTags
 
 	// Events
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Melee_Hit);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Death);
 
 	// Weapon-granted permission tags (added/removed on equip/unequip)
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Enable_HeavyAttack);
