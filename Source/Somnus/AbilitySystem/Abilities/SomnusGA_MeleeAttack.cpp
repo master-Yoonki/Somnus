@@ -2,8 +2,7 @@
 
 
 #include "AbilitySystem/Abilities/SomnusGA_MeleeAttack.h"
-#include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
-#include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
+#include "AbilitySystem/Tasks/SomnusAT_PlayMontageAndWaitForEvent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Core/SomnusGameplayTags.h"
@@ -26,42 +25,41 @@ void USomnusGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Han
 		return;
 	}
 
-	UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-		this, NAME_None, AttackMontage, MontagePlayRate);
+	// Combined task: plays montage AND listens for melee hit events simultaneously
+	FGameplayTagContainer EventTagFilter;
+	EventTagFilter.AddTag(SomnusTags::Event_Melee_Hit);
 
-	MontageTask->OnCompleted.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCompleted);
-	MontageTask->OnBlendOut.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCompleted);
-	MontageTask->OnInterrupted.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCancelled);
-	MontageTask->OnCancelled.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCancelled);
+	USomnusAT_PlayMontageAndWaitForEvent* Task = USomnusAT_PlayMontageAndWaitForEvent::PlayMontageAndWaitForEvent(
+		this, NAME_None, AttackMontage, EventTagFilter, MontagePlayRate);
 
-	MontageTask->ReadyForActivation();
+	Task->OnCompleted.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCompleted);
+	Task->OnBlendOut.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCompleted);
+	Task->OnInterrupted.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCancelled);
+	Task->OnCancelled.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCancelled);
+	Task->EventReceived.AddDynamic(this, &USomnusGA_MeleeAttack::OnMeleeHit);
 
-	// Listen for melee hit events from the MeleeTrace anim notify state
-	UAbilityTask_WaitGameplayEvent* WaitHitTask = UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
-		this, SomnusTags::Event_Melee_Hit, nullptr, true);
-	WaitHitTask->EventReceived.AddDynamic(this, &USomnusGA_MeleeAttack::OnMeleeHit);
-	WaitHitTask->ReadyForActivation();
+	Task->ReadyForActivation();
 }
 
-void USomnusGA_MeleeAttack::OnMontageCompleted()
+void USomnusGA_MeleeAttack::OnMontageCompleted(FGameplayTag EventTag, FGameplayEventData EventData)
 {
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }
 
-void USomnusGA_MeleeAttack::OnMontageCancelled()
+void USomnusGA_MeleeAttack::OnMontageCancelled(FGameplayTag EventTag, FGameplayEventData EventData)
 {
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
 }
 
-void USomnusGA_MeleeAttack::OnMeleeHit(FGameplayEventData Payload)
+void USomnusGA_MeleeAttack::OnMeleeHit(FGameplayTag EventTag, FGameplayEventData EventData)
 {
-	if (!DamageEffectClass || !Payload.Target)
+	if (!DamageEffectClass || !EventData.Target)
 	{
 		return;
 	}
 
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(
-		const_cast<AActor*>(Payload.Target.Get()));
+		const_cast<AActor*>(EventData.Target.Get()));
 	if (!TargetASC)
 	{
 		return;

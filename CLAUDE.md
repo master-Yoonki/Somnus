@@ -65,7 +65,12 @@ All project tags are declared in `SomnusGameplayTags` namespace. Add new tags th
 
 ```
 Source/Somnus/
-├── AbilitySystem/Attributes/   # Attribute sets (Health, Stamina)
+├── AbilitySystem/
+│   ├── Abilities/              # Concrete ability classes (MeleeAttack, Jump, Aim, etc.)
+│   ├── AsyncTasks/             # Blueprint async nodes (attribute/cooldown listeners)
+│   ├── Attributes/             # Attribute sets (Health, Stamina)
+│   ├── Effects/                # GameplayEffect C++ classes (Cost, Cooldown, Damage, Regen)
+│   └── Tasks/                  # Custom AbilityTasks (PlayMontageAndWaitForEvent)
 ├── Animation/                  # AnimInstance + AnimNotifies
 ├── Character/                  # Player character
 ├── Core/                       # GameMode, PlayerState, GameplayTags

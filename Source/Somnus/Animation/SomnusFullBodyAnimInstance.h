@@ -24,8 +24,11 @@ protected:
 	UPROPERTY(BlueprintReadWrite, Category = "RootYawOffset")
 	ERootYawOffsetMode RootYawOffsetMode;
 
-	UPROPERTY(BlueprintReadOnly, Category = "RootYawOffset")
+	UPROPERTY(BlueprintReadWrite, Category = "RootYawOffset")
 	float RootYawOffset;
+	
+	UPROPERTY(BlueprintReadWrite, Category = "RootYawOffset")
+	float AccumulatedRootYawOffset;
 
 	UPROPERTY(BlueprintReadOnly, Category = "RootYawOffset")
 	FFloatSpringState FloatSpringState;

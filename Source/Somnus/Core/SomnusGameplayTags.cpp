@@ -24,10 +24,21 @@ namespace SomnusTags
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Melee_Heavy, "Ability.Melee.Heavy");
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Melee_Light, "Ability.Melee.Light");
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Aim, "Ability.Aim");
+	UE_DEFINE_GAMEPLAY_TAG(Ability_Jump, "Ability.Jump");
+
+	// Cooldown tags
+	UE_DEFINE_GAMEPLAY_TAG(Cooldown_Ability_Jump, "Cooldown.Ability.Jump");
+
+	// Data — SetByCaller keys (cooldown)
+	UE_DEFINE_GAMEPLAY_TAG(Data_CooldownDuration, "Data.CooldownDuration");
 
 	// Character state
 	UE_DEFINE_GAMEPLAY_TAG(State_Aiming, "State.Aiming");
 	UE_DEFINE_GAMEPLAY_TAG(State_MovementCancellable, "State.MovementCancellable");
+	UE_DEFINE_GAMEPLAY_TAG(State_Dead, "State.Dead");
+
+	// Effect policy tags
+	UE_DEFINE_GAMEPLAY_TAG(Effect_RemoveOnDeath, "Effect.RemoveOnDeath");
 
 	// Input — Native
 	UE_DEFINE_GAMEPLAY_TAG(Input_Native_Move, "Input.Native.Move");
@@ -37,4 +48,5 @@ namespace SomnusTags
 	// Input — Ability
 	UE_DEFINE_GAMEPLAY_TAG(Input_Ability_Attack, "Input.Ability.Attack");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Ability_Aim, "Input.Ability.Aim");
+	UE_DEFINE_GAMEPLAY_TAG(Input_Ability_Jump, "Input.Ability.Jump");
 }

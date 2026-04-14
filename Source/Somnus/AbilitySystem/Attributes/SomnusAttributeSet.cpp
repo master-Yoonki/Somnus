@@ -2,6 +2,7 @@
 
 
 #include "AbilitySystem/Attributes/SomnusAttributeSet.h"
+#include "Character/SomnusCharacter.h"
 #include "Net/UnrealNetwork.h"
 
 USomnusAttributeSet::USomnusAttributeSet()
@@ -37,6 +38,7 @@ void USomnusAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute
 	else if (Attribute == GetMaxHealthAttribute())
 	{
 		NewValue = FMath::Max(NewValue, 1.0f);
+		AdjustAttributeForMaxChange(Health, MaxHealth, NewValue, GetHealthAttribute());
 	}
 	else if (Attribute == GetStaminaAttribute())
 	{
@@ -45,6 +47,7 @@ void USomnusAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute
 	else if (Attribute == GetMaxStaminaAttribute())
 	{
 		NewValue = FMath::Max(NewValue, 1.0f);
+		AdjustAttributeForMaxChange(Stamina, MaxStamina, NewValue, GetStaminaAttribute());
 	}
 	else if (Attribute == GetStaminaRegenRateAttribute())
 	{
@@ -65,7 +68,14 @@ void USomnusAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCall
 		{
 			const float NewHealth = FMath::Clamp(GetHealth() - DamageDone, 0.0f, GetMaxHealth());
 			SetHealth(NewHealth);
-			// OnHealthChanged.Broadcast(NewHealth, GetMaxHealth());
+
+			if (NewHealth <= 0.0f)
+			{
+				if (ASomnusCharacter* Character = Cast<ASomnusCharacter>(GetOwningAbilitySystemComponent()->GetAvatarActor()))
+				{
+					Character->Die();
+				}
+			}
 		}
 	}
 }
@@ -110,4 +120,22 @@ void USomnusAttributeSet::OnRep_MaxStamina(const FGameplayAttributeData& OldMaxS
 void USomnusAttributeSet::OnRep_StaminaRegenRate(const FGameplayAttributeData& OldStaminaRegenRate)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(USomnusAttributeSet, StaminaRegenRate, OldStaminaRegenRate);
+}
+
+void USomnusAttributeSet::AdjustAttributeForMaxChange(const FGameplayAttributeData& AffectedAttribute,
+	const FGameplayAttributeData& MaxAttribute, float NewMaxValue,
+	const FGameplayAttribute& AffectedAttributeProperty) const
+{
+	UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
+	const float CurrentMaxValue = MaxAttribute.GetCurrentValue();
+	if (!FMath::IsNearlyEqual(CurrentMaxValue, NewMaxValue) && ASC)
+	{
+		// Scale the current value proportionally to the new max.
+		// e.g., 50/100 HP (50%) -> 75/150 HP (still 50%) when MaxHealth goes 100->150.
+		const float CurrentValue = AffectedAttribute.GetCurrentValue();
+		const float NewDelta = (CurrentMaxValue > 0.0f)
+			? (NewMaxValue - CurrentMaxValue) * (CurrentValue / CurrentMaxValue)
+			: NewMaxValue;
+		ASC->ApplyModToAttribute(AffectedAttributeProperty, EGameplayModOp::Additive, NewDelta);
+	}
 }

@@ -6,9 +6,6 @@
 #include "Animation/AnimNotifies/AnimNotifyState.h"
 #include "SomnusAnimNotifyState_MeleeTrace.generated.h"
 
-/**
- * 
- */
 UCLASS()
 class SOMNUS_API USomnusAnimNotifyState_MeleeTrace : public UAnimNotifyState
 {

@@ -4,7 +4,6 @@
 #include "SomnusCharacter.h"
 #include "Core/SomnusPlayerState.h"
 #include "AbilitySystemComponent.h"
-// --- Add these headers for Camera and Movement ---
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -17,6 +16,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Equipment/SomnusWeapon.h"
 #include "GameplayEffect.h"
+#include "Abilities/GameplayAbility.h"
 
 ASomnusCharacter::ASomnusCharacter()
 {
@@ -40,7 +40,7 @@ ASomnusCharacter::ASomnusCharacter()
 
 	// Create a follow camera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
-	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName); // Attach the camera to the end of the boom
+	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm
 
 	CurrentGait = ESomnusGait::None;
@@ -90,17 +90,33 @@ void ASomnusCharacter::PossessedBy(AController* NewController)
 		UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent();
 		ASC->InitAbilityActorInfo(PS, this);
 
-		// Apply default GEs (stamina regen, passive buffs, etc.)
-		for (const TSubclassOf<UGameplayEffect>& GEClass : DefaultGameplayEffects)
+		// Apply default GEs (stamina regen, passive buffs, etc.) — guarded against repossession
+		if (!bDefaultEffectsApplied)
 		{
-			if (!GEClass) continue;
-			FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
-			ContextHandle.AddSourceObject(this);
-			FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(GEClass, 1.0f, ContextHandle);
-			if (SpecHandle.IsValid())
+			for (const TSubclassOf<UGameplayEffect>& GEClass : DefaultGameplayEffects)
 			{
-				ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+				if (!GEClass) continue;
+				FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
+				ContextHandle.AddSourceObject(this);
+				FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(GEClass, 1.0f, ContextHandle);
+				if (SpecHandle.IsValid())
+				{
+					ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+				}
 			}
+			bDefaultEffectsApplied = true;
+		}
+
+		// Grant innate abilities (e.g., Jump) — guarded against repossession
+		if (!bDefaultAbilitiesGiven)
+		{
+			for (const TSubclassOf<UGameplayAbility>& AbilityClass : DefaultAbilities)
+			{
+				if (!AbilityClass) continue;
+				FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
+				ASC->GiveAbility(Spec);
+			}
+			bDefaultAbilitiesGiven = true;
 		}
 
 		if (IsLocallyControlled())
@@ -225,10 +241,7 @@ void ASomnusCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerIn
 	// Native actions
 	SomnusIC->BindNativeAction(InputConfig, SomnusTags::Input_Native_Move, ETriggerEvent::Triggered, this, &ASomnusCharacter::Move);
 	SomnusIC->BindNativeAction(InputConfig, SomnusTags::Input_Native_Look, ETriggerEvent::Triggered, this, &ASomnusCharacter::Look);
-	SomnusIC->BindNativeAction(InputConfig, SomnusTags::Input_Native_Jump, ETriggerEvent::Started, this, &ACharacter::Jump);
-	SomnusIC->BindNativeAction(InputConfig, SomnusTags::Input_Native_Jump, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
-
-	// Ability actions
+	// Ability actions (Jump is routed here too — see GA_Jump for InputReleased handling)
 	SomnusIC->BindAbilityActions(InputConfig, this, &ASomnusCharacter::AbilityInputTagPressed, &ASomnusCharacter::AbilityInputTagReleased);
 }
 
@@ -282,21 +295,11 @@ void ASomnusCharacter::Look(const FInputActionValue& Value)
 
 void ASomnusCharacter::AbilityInputTagPressed(FGameplayTag InputTag)
 {
-	UE_LOG(LogTemp, Warning, TEXT("[AbilityInput] Pressed: %s"), *InputTag.ToString());
-
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
-	if (!ASC)
-	{
-		UE_LOG(LogTemp, Error, TEXT("[AbilityInput] ASC is null!"));
-		return;
-	}
+	if (!ASC) return;
 
 	const FGameplayTagContainer* AbilityTags = InputTagToAbilityTags.Find(InputTag);
-	if (!AbilityTags)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[AbilityInput] No mapping found for InputTag: %s"), *InputTag.ToString());
-		return;
-	}
+	if (!AbilityTags) return;
 
 	// Try each ability tag individually — TryActivateAbilitiesByTag with multiple tags
 	// requires ALL tags to match a single ability, so we iterate instead.
@@ -306,27 +309,34 @@ void ASomnusCharacter::AbilityInputTagPressed(FGameplayTag InputTag)
 		SingleTag.AddTag(Tag);
 		if (ASC->TryActivateAbilitiesByTag(SingleTag))
 		{
-			UE_LOG(LogTemp, Warning, TEXT("[AbilityInput] Activated ability with tag: %s"), *Tag.ToString());
 			return;
 		}
 	}
-	UE_LOG(LogTemp, Warning, TEXT("[AbilityInput] No ability activated for tags: %s"), *AbilityTags->ToString());
 }
 
 void ASomnusCharacter::AbilityInputTagReleased(FGameplayTag InputTag)
 {
-	// Only cancel abilities for hold-type inputs (configured in BP)
-	if (!HoldInputTags.HasTagExact(InputTag))
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (!ASC) return;
+
+	const FGameplayTagContainer* AbilityTags = InputTagToAbilityTags.Find(InputTag);
+	if (!AbilityTags) return;
+
+	// Notify all matching active abilities of input release.
+	// This fires InputReleased() on abilities (e.g., GA_Jump calls StopJumping).
+	for (FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
 	{
-		return;
+		if (Spec.IsActive() && Spec.Ability && AbilityTags->HasAny(Spec.Ability->GetAssetTags()))
+		{
+			Spec.InputPressed = false;
+			ASC->AbilitySpecInputReleased(Spec);
+		}
 	}
 
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	// Only cancel abilities for hold-type inputs (Aim, Block, etc.)
+	if (HoldInputTags.HasTagExact(InputTag))
 	{
-		if (const FGameplayTagContainer* AbilityTags = InputTagToAbilityTags.Find(InputTag))
-		{
-			ASC->CancelAbilities(AbilityTags);
-		}
+		ASC->CancelAbilities(AbilityTags);
 	}
 }
 
@@ -355,6 +365,36 @@ void ASomnusCharacter::AddInputMappingContext() const
 			Subsystem->AddMappingContext(DefaultMappingContext, 0);
 		}
 	}
+}
+
+void ASomnusCharacter::Die()
+{
+	if (IsDead()) return;
+
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	if (!ASC) return;
+
+	// 1. Cancel all active abilities
+	ASC->CancelAllAbilities();
+
+	// 2. Remove effects tagged with Effect.RemoveOnDeath (regen, buffs, etc.)
+	FGameplayTagContainer EffectTagsToRemove;
+	EffectTagsToRemove.AddTag(SomnusTags::Effect_RemoveOnDeath);
+	int32 NumRemoved = ASC->RemoveActiveEffectsWithGrantedTags(EffectTagsToRemove);
+
+	// 3. Add the dead state tag
+	ASC->AddLooseGameplayTag(SomnusTags::State_Dead);
+
+	// 4. Disable collision so the corpse doesn't block
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GetCharacterMovement()->GravityScale = 0.0f;
+	GetCharacterMovement()->Velocity = FVector::ZeroVector;
+}
+
+bool ASomnusCharacter::IsDead() const
+{
+	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	return ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Dead);
 }
 
 void ASomnusCharacter::BindAttributeCallbacks()

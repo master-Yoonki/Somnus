@@ -112,6 +112,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Weapon")
 	bool bHasUpperBodyLayer;
 
+	// Additive pose for weapon-specific foot stance correction (set from weapon)
+	UPROPERTY(BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UAnimSequence> StanceCorrectionPose;
+
+	// Alpha for stance correction additive blend (1.0 in idle, 0.0 when moving)
+	UPROPERTY(BlueprintReadOnly, Category = "Weapon")
+	float StanceCorrectionAlpha;
+
 	// 1.0 when moving (upper body layer active), 0.0 when idle
 	UPROPERTY(BlueprintReadOnly, Category = "Blending")
 	float UpperBodyBlendWeight;
@@ -155,5 +163,5 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Rotation")
 	float DeltaActorYaw;
 	
-	bool bIsInitialized;
+	bool bIsInitialized = false;
 };

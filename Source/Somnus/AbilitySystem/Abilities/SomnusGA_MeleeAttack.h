@@ -12,6 +12,7 @@ class UGameplayEffect;
 /**
  * Melee attack ability that plays an attack montage.
  * Hit detection is handled by USomnusAnimNotifyState_MeleeTrace on the montage.
+ * Uses the combined PlayMontageAndWaitForEvent task for clean montage + event handling.
  */
 UCLASS()
 class SOMNUS_API USomnusGA_MeleeAttack : public USomnusGameplayAbility
@@ -42,11 +43,11 @@ protected:
 
 private:
 	UFUNCTION()
-	void OnMontageCompleted();
+	void OnMontageCompleted(FGameplayTag EventTag, FGameplayEventData EventData);
 
 	UFUNCTION()
-	void OnMontageCancelled();
+	void OnMontageCancelled(FGameplayTag EventTag, FGameplayEventData EventData);
 
 	UFUNCTION()
-	void OnMeleeHit(FGameplayEventData Payload);
+	void OnMeleeHit(FGameplayTag EventTag, FGameplayEventData EventData);
 };

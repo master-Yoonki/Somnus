@@ -6,9 +6,6 @@
 #include "Equipment/SomnusWeapon.h"
 #include "SomnusMeleeWeapon.generated.h"
 
-/**
- * 
- */
 UCLASS()
 class SOMNUS_API ASomnusMeleeWeapon : public ASomnusWeapon
 {

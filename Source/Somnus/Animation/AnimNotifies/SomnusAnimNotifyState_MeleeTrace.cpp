@@ -23,15 +23,13 @@ void USomnusAnimNotifyState_MeleeTrace::NotifyTick(USkeletalMeshComponent* MeshC
 
 	if (!MeshComp || !MeshComp->GetOwner()) return;
 
-    // Get the character owning this animation
-    ASomnusCharacter* OwnerChar = Cast<ASomnusCharacter>(MeshComp->GetOwner());
-    if (!OwnerChar) return;
+	ASomnusCharacter* OwnerChar = Cast<ASomnusCharacter>(MeshComp->GetOwner());
+	if (!OwnerChar) return;
 
-    // Only process hits on the server to prevent duplicate damage in multiplayer
-    if (!OwnerChar->HasAuthority()) return;
+	// Only process hits on the server to prevent duplicate damage in multiplayer
+	if (!OwnerChar->HasAuthority()) return;
 
-    // Get the equipped melee weapon data container
-    ASomnusMeleeWeapon* Weapon = Cast<ASomnusMeleeWeapon>(OwnerChar->GetEquippedWeapon());
+	ASomnusMeleeWeapon* Weapon = Cast<ASomnusMeleeWeapon>(OwnerChar->GetEquippedWeapon());
     if (!Weapon || !Weapon->GetWeaponMesh()) return;
 
     // 1. Read the trace data from the weapon
@@ -45,6 +43,13 @@ void USomnusAnimNotifyState_MeleeTrace::NotifyTick(USkeletalMeshComponent* MeshC
     ActorsToIgnore.Append(AlreadyHitActors);
 
     // 2. Perform the Sphere Trace
+    const EDrawDebugTrace::Type DebugTrace =
+#if ENABLE_DRAW_DEBUG
+        EDrawDebugTrace::ForOneFrame;
+#else
+        EDrawDebugTrace::None;
+#endif
+
     UKismetSystemLibrary::SphereTraceMulti(
         OwnerChar,
         BaseLocation,
@@ -53,7 +58,7 @@ void USomnusAnimNotifyState_MeleeTrace::NotifyTick(USkeletalMeshComponent* MeshC
         UEngineTypes::ConvertToTraceType(ECC_Pawn),
         false,
         ActorsToIgnore,
-        EDrawDebugTrace::ForOneFrame,
+        DebugTrace,
         HitResults,
         true,
         FLinearColor::Red,

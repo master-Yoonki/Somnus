@@ -8,7 +8,6 @@
 #include "AbilitySystem/Attributes/SomnusAttributeSet.h"
 #include "SomnusPlayerState.generated.h"
 
-class UAttributeSet;
 /**
  * Custom PlayerState that holds the AbilitySystemComponent.
  * Essential for replication and GAS functionality in a True FPS environment.

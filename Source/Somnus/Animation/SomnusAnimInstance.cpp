@@ -1,4 +1,3 @@
-
 // Fill out your copyright notice in the Description page of Project Settings.
 
 
@@ -6,7 +5,6 @@
 
 #include "KismetAnimationLibrary.h"
 #include "AbilitySystemComponent.h"
-#include "AbilitySystemInterface.h"
 #include "Character/SomnusCharacter.h"
 #include "Core/SomnusGameplayTags.h"
 #include "Equipment/SomnusWeapon.h"
@@ -59,6 +57,11 @@ void USomnusAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	}
 
 	UpperBodyBlendWeight = (GroundSpeed > 0.0f) ? 1.0f : 0.0f;
+
+	// Stance correction: full weight in idle, blend out when moving
+	float TargetStanceAlpha = (StanceCorrectionPose && GroundSpeed < 1.0f) ? 1.0f : 0.0f;
+	StanceCorrectionAlpha = FMath::FInterpTo(StanceCorrectionAlpha, TargetStanceAlpha, DeltaSeconds, 8.0f);
+
 	bIsInitialized = true;
 }
 
@@ -94,11 +97,13 @@ void USomnusAnimInstance::UpdateWeaponData()
 	{
 		EquippedWeaponType = Weapon->GetWeaponType();
 		bHasUpperBodyLayer = Weapon->HasUpperBodyLayer();
+		StanceCorrectionPose = Weapon->GetStanceCorrectionPose();
 	}
 	else
 	{
 		EquippedWeaponType = ESomnusWeaponType::None;
 		bHasUpperBodyLayer = false;
+		StanceCorrectionPose = nullptr;
 	}
 }
 
@@ -147,6 +152,8 @@ void USomnusAnimInstance::CopyFromMainInstance(const USomnusAnimInstance* MainIn
 	EquippedWeaponType = MainInstance->EquippedWeaponType;
 	bHasUpperBodyLayer = MainInstance->bHasUpperBodyLayer;
 	UpperBodyBlendWeight = MainInstance->UpperBodyBlendWeight;
+	StanceCorrectionPose = MainInstance->StanceCorrectionPose;
+	StanceCorrectionAlpha = MainInstance->StanceCorrectionAlpha;
 
 	// Jump
 	DistanceToGround = MainInstance->DistanceToGround;

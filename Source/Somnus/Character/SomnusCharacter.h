@@ -10,6 +10,7 @@
 #include "SomnusCharacter.generated.h"
 
 class ASomnusWeapon;
+class UGameplayAbility;
 class UGameplayEffect;
 class USomnusInputConfig;
 enum class ESomnusGait : uint8;
@@ -97,6 +98,13 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "GAS|UI")
 	void UpdateStaminaUI(float CurrentStamina, float MaxStamina);
 
+	// Called when Health reaches zero. Cancels abilities, removes effects, disables collision.
+	UFUNCTION(BlueprintCallable, Category = "GAS")
+	virtual void Die();
+
+	UFUNCTION(BlueprintPure, Category = "GAS")
+	bool IsDead() const;
+
 	// Getter function for AnimNotify and Abilities to read the weapon data
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
 	ASomnusWeapon* GetEquippedWeapon() const { return EquippedWeapon; }
@@ -112,6 +120,10 @@ protected:
 	// GEs applied to the ASC at possession (e.g., stamina regen, passive buffs)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
 	TArray<TSubclassOf<UGameplayEffect>> DefaultGameplayEffects;
+
+	// Abilities granted at possession time (innate abilities like Jump)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
+	TArray<TSubclassOf<UGameplayAbility>> DefaultAbilities;
 
 	// Default full body locomotion layer (ABP_UnarmedLocomotion — always re-linked on unequip)
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
@@ -137,4 +149,8 @@ protected:
 
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
 	ESomnusGait CurrentGait;
+
+	// Guards against double-granting on repossession/respawn
+	bool bDefaultAbilitiesGiven = false;
+	bool bDefaultEffectsApplied = false;
 };

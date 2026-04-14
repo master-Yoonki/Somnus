@@ -6,6 +6,7 @@
 #include "GameplayTagContainer.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "Abilities/GameplayAbility.h"
+#include "Animation/AnimSequence.h"
 #include "GameFramework/Actor.h"
 #include "SomnusWeapon.generated.h"
 
@@ -37,6 +38,7 @@ public:
 
 	ESomnusWeaponType GetWeaponType() const { return WeaponType; }
 	bool HasUpperBodyLayer() const { return UpperBodyAnimLayerClass != nullptr; }
+	UAnimSequence* GetStanceCorrectionPose() const { return StanceCorrectionPose; }
 
 	void LinkAnimLayers(USkeletalMeshComponent* Mesh);
 	void UnlinkAnimLayers(USkeletalMeshComponent* Mesh);
@@ -52,6 +54,10 @@ protected:
 	// Upper body overlay (e.g., bat/sword idle pose over unarmed locomotion)
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
 	TSubclassOf<UAnimInstance> UpperBodyAnimLayerClass;
+
+	// Additive pose for correcting foot stance in idle (e.g., bat idle - unarmed idle delta)
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
+	TObjectPtr<UAnimSequence> StanceCorrectionPose;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon|Components")
 	class UStaticMeshComponent* WeaponMesh;

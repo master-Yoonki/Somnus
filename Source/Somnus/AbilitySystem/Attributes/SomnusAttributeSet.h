@@ -35,7 +35,8 @@ public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 protected:
-    // Clamp attribute values before they are applied
+    // Clamp attribute values before they are applied.
+    // Also scales current Health/Stamina proportionally when their Max changes.
     virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
 
     // Process damage after GE execution: reads IncomingDamage, subtracts from Health, then zeroes it out
@@ -91,4 +92,11 @@ protected:
 
     UFUNCTION()
     virtual void OnRep_StaminaRegenRate(const FGameplayAttributeData& OldStaminaRegenRate);
+
+private:
+    // Scales AffectedAttribute proportionally when its Max changes.
+    // e.g., 50/100 HP -> 75/150 HP when MaxHealth goes 100->150.
+    void AdjustAttributeForMaxChange(const FGameplayAttributeData& AffectedAttribute,
+        const FGameplayAttributeData& MaxAttribute, float NewMaxValue,
+        const FGameplayAttribute& AffectedAttributeProperty) const;
 };

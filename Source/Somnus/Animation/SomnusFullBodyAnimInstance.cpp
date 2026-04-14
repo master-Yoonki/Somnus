@@ -2,8 +2,6 @@
 
 #include "Animation/SomnusFullBodyAnimInstance.h"
 
-#include "Kismet/KismetMathLibrary.h"
-
 void USomnusFullBodyAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
@@ -15,6 +13,7 @@ void USomnusFullBodyAnimInstance::OnIdleStateUpdate()
 	RootYawOffsetMode = ERootYawOffsetMode::Accumulate;
 	// Process Turn Yaw Table
 	LastFrameTurnYawCurveValue = TurnYawCurveValue;
+
 	float TurnYawWeight = GetCurveValue(FName("turnyawweight"));
 	if (TurnYawWeight <= 0.01f)
 	{
@@ -24,9 +23,9 @@ void USomnusFullBodyAnimInstance::OnIdleStateUpdate()
 	else
 	{
 		float RootRotationZ = GetCurveValue(FName("remainingturnyaw"));
-
+	
 		TurnYawCurveValue = UKismetMathLibrary::SafeDivide(RootRotationZ, TurnYawWeight);
-
+	
 		if (LastFrameTurnYawCurveValue != 0.f)
 		{
 			RootYawOffset =

@@ -28,10 +28,21 @@ namespace SomnusTags
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Melee_Heavy);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Melee_Light);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Aim);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Jump);
+
+	// Cooldown tags
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Ability_Jump);
+
+	// Data — SetByCaller keys (cooldown)
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Data_CooldownDuration);
 
 	// Character state
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Aiming);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_MovementCancellable);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
+
+	// Effect policy tags — used to batch-remove effects on death
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_RemoveOnDeath);
 
 	// Input — Native
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Native_Move);
@@ -41,4 +52,5 @@ namespace SomnusTags
 	// Input — Ability
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Ability_Attack);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Ability_Aim);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Ability_Jump);
 };
