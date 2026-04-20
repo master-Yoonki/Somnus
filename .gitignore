@@ -12,3 +12,4 @@ Build/
 *.sln
 *.suo
 *.DS_Store
+*.DotSettings.user
