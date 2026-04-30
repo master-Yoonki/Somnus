@@ -17,6 +17,7 @@ public class Somnus : ModuleRules
 			"Engine",
 			"InputCore",
 			"EnhancedInput",
+			"NetCore",
 			// GAS Modules
 			"GameplayAbilities", 
 			"GameplayTags", 

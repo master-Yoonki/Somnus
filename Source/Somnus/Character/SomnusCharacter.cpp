@@ -18,6 +18,7 @@
 #include "GameplayEffect.h"
 #include "Abilities/GameplayAbility.h"
 #include "Core/SomnusGameMode.h"
+#include "Inventory/SomnusInventoryComponent.h"
 
 ASomnusCharacter::ASomnusCharacter()
 {
@@ -43,6 +44,9 @@ ASomnusCharacter::ASomnusCharacter()
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm
+
+	// Create the inventory component
+	Inventory = CreateDefaultSubobject<USomnusInventoryComponent>(TEXT("Inventory"));
 
 	CurrentGait = ESomnusGait::None;
 }
@@ -92,6 +96,12 @@ void ASomnusCharacter::PossessedBy(AController* NewController)
 		ASC->InitAbilityActorInfo(PS, this);
 
 		// Apply default GEs (stamina regen, passive buffs, etc.) — guarded against repossession
+		const USomnusAttributeSet* AS = PS->GetAttributeSet();
+		UE_LOG(LogTemp, Warning, TEXT("[Somnus][Possess] %s  bDefaultEffectsApplied=%d  Health BEFORE=%.1f/%.1f  DefaultGE count=%d"),
+			*GetNameSafe(this), bDefaultEffectsApplied ? 1 : 0,
+			AS ? AS->GetHealth() : -1.f, AS ? AS->GetMaxHealth() : -1.f,
+			DefaultGameplayEffects.Num());
+
 		if (!bDefaultEffectsApplied)
 		{
 			for (const TSubclassOf<UGameplayEffect>& GEClass : DefaultGameplayEffects)
@@ -103,10 +113,14 @@ void ASomnusCharacter::PossessedBy(AController* NewController)
 				if (SpecHandle.IsValid())
 				{
 					ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+					UE_LOG(LogTemp, Warning, TEXT("[Somnus][Possess]   Applied %s"), *GetNameSafe(GEClass));
 				}
 			}
 			bDefaultEffectsApplied = true;
 		}
+
+		UE_LOG(LogTemp, Warning, TEXT("[Somnus][Possess] %s  Health AFTER =%.1f/%.1f"),
+			*GetNameSafe(this), AS ? AS->GetHealth() : -1.f, AS ? AS->GetMaxHealth() : -1.f);
 
 		// Grant innate abilities (e.g., Jump) — guarded against repossession
 		if (!bDefaultAbilitiesGiven)
@@ -168,8 +182,12 @@ void ASomnusCharacter::BeginPlay()
 
 void ASomnusCharacter::SwitchWeapon(int32 SlotIndex)
 {
-	if (!HasAuthority()) return;
+	// Route through server RPC. On the server this executes locally; on a client it sends an RPC.
+	ServerSwitchWeapon(SlotIndex);
+}
 
+void ASomnusCharacter::ServerSwitchWeapon_Implementation(int32 SlotIndex)
+{
 	ASomnusWeapon* OldWeapon = EquippedWeapon;
 
 	// Unequip current weapon

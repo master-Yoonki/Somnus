@@ -13,6 +13,7 @@ class ASomnusWeapon;
 class UGameplayAbility;
 class UGameplayEffect;
 class USomnusInputConfig;
+class USomnusInventoryComponent;
 enum class ESomnusGait : uint8;
 
 /**
@@ -85,6 +86,10 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
     class UCameraComponent* FollowCamera;
 
+	// Grid-based inventory component
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<USomnusInventoryComponent> Inventory;
+
 public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "UI")
 	void InitHUD();
@@ -111,16 +116,24 @@ public:
 	void OnDeath();
 
 	// Client requests respawn — server validates and tells GameMode to spawn a new pawn
-	UFUNCTION(Server, Reliable, Category = "GAS")
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "GAS")
 	void ServerRequestRespawn();
 
 	// Getter function for AnimNotify and Abilities to read the weapon data
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
 	ASomnusWeapon* GetEquippedWeapon() const { return EquippedWeapon; }
 
-	// Switch weapon slot: 0 = unarmed, 1+ = weapon index in WeaponClasses
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	USomnusInventoryComponent* GetInventory() const { return Inventory; }
+
+	// Switch weapon slot: 0 = unarmed, 1+ = weapon index in WeaponClasses.
+	// Safe to call from client — routes to ServerSwitchWeapon.
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
 	void SwitchWeapon(int32 SlotIndex);
+
+	// Server-authoritative switch. Do not call directly from BP — use SwitchWeapon.
+	UFUNCTION(Server, Reliable)
+	void ServerSwitchWeapon(int32 SlotIndex);
 
 	UFUNCTION()
 	ESomnusGait GetCurrentGait() const { return CurrentGait; }

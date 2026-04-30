@@ -39,6 +39,10 @@ protected:
     // Also scales current Health/Stamina proportionally when their Max changes.
     virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
 
+    // Clamps the base value — required in addition to PreAttributeChange because periodic
+    // GEs (like stamina regen) write through SetBaseValue and bypass the aggregator path.
+    virtual void PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const override;
+
     // Process damage after GE execution: reads IncomingDamage, subtracts from Health, then zeroes it out
     virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
 

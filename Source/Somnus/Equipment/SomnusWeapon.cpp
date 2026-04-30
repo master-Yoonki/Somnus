@@ -46,8 +46,10 @@ void ASomnusWeapon::Equip(ASomnusCharacter* TargetCharacter)
 	// 2. GAS Grants (Tags and Abilities)
 	if (UAbilitySystemComponent* ASC = OwningCharacter->GetAbilitySystemComponent())
 	{
-		// Grant permissions tags (e.g., Ability.Enable.Swing)
-		ASC->AddLooseGameplayTags(WeaponTags);
+		// Grant permission tags (e.g., Ability.Enable.Swing).
+		// TagOnly rep state is required so clients see the tag and can pass ability
+		// activation requirements locally — default None does not replicate.
+		ASC->AddLooseGameplayTags(WeaponTags, 1, EGameplayTagReplicationState::TagOnly);
 
 		// Grant gameplay abilities
 		for (TSubclassOf<UGameplayAbility> AbilityClass : AbilitiesToGrant)
@@ -71,8 +73,8 @@ void ASomnusWeapon::Unequip()
 	// 1. GAS Revokes (Tags and Abilities)
 	if (UAbilitySystemComponent* ASC = OwningCharacter->GetAbilitySystemComponent())
 	{
-		// Remove permission tags
-		ASC->RemoveLooseGameplayTags(WeaponTags);
+		// Remove with the same rep state used when adding, so the replicated count clears.
+		ASC->RemoveLooseGameplayTags(WeaponTags, 1, EGameplayTagReplicationState::TagOnly);
 
 		// Remove granted abilities using stored receipts
 		for (const FGameplayAbilitySpecHandle& Handle : GrantedAbilityHandles)
