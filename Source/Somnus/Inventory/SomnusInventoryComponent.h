@@ -34,6 +34,34 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Grid")
 	bool FindFirstFit(class USomnusItemDataAsset* ItemData, int32& OutX, int32& OutY, bool& bOutRotated) const;
 
+	/** Attempts to add an item by finding the first available slot. 
+	 * Returns the leftover quantity that failed to add (0 if fully successful). Server-only. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	int32 AddItemAnywhere(class USomnusItemDataAsset* ItemData, int32 Quantity = 1);
+
+	/** Attempts to add an item at a specific location. Returns the leftover quantity that failed to add (0 if fully successful). Server-only. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	int32 AddItemAt(class USomnusItemDataAsset* ItemData, int32 Quantity, int32 TopLeftX, int32 TopLeftY, bool bRotated);
+
+	/** Removes an item by its unique instance ID. Returns true if successful. Server-only. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	bool RemoveItem(FGuid InstanceID);
+
+	/** Server RPC for adding an item anywhere. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
+	void Server_AddItemAnywhere(class USomnusItemDataAsset* ItemData, int32 Quantity = 1);
+
+	/** Server RPC for adding an item at a specific location. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
+	void Server_AddItemAt(class USomnusItemDataAsset* ItemData, int32 Quantity, int32 TopLeftX, int32 TopLeftY, bool bRotated);
+
+	/** Server RPC for removing an item. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
+	void Server_RemoveItem(FGuid InstanceID);
+
+	/** Internal logic to add an item after validation. */
+	void Internal_AddItem(class USomnusItemDataAsset* ItemData, int32 Quantity, int32 TopLeftX, int32 TopLeftY, bool bRotated);
+
 	/** Prints the current grid state to the log (■ for occupied, □ for empty) */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Debug")
 	void PrintDebugGrid() const;
@@ -48,6 +76,9 @@ protected:
 
 	/** Rebuilds the OccupationGrid bit array from scratch based on current items */
 	void RebuildOccupationGrid();
+
+	/** Helper to find an item instance that covers a specific grid cell */
+	FSomnusItemInstance* GetItemAt(int32 X, int32 Y);
 
 	/** Helper to find an item instance by its unique ID */
 	const FSomnusItemInstance* FindItemInstance(FGuid ID) const;
