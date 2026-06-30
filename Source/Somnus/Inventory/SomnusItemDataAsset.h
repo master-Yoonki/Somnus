@@ -24,6 +24,10 @@ class SOMNUS_API USomnusItemDataAsset : public UPrimaryDataAsset
 public:
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 	
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
+#endif
+	
 	/** Returns the dimensions of the item, accounting for 90-degree rotation */
 	UFUNCTION(BlueprintPure, Category = "Item|Grid")
 	FIntPoint GetEffectiveSize(bool bRotated) const;
@@ -57,7 +61,7 @@ public:
 	FIntPoint Size = { 1, 1 };
 	
 	/** Defines the internal shape of the item. Empty array means the item is a solid rectangle. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Status")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, EditFixedSize, Category = "Item|Status", meta=(EditFixedOrder))
 	TArray<bool> ShapeMask;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|World")

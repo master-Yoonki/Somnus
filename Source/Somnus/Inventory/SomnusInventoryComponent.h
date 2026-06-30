@@ -8,6 +8,7 @@
 #include "SomnusInventoryComponent.generated.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogSomnusInventory, Log, All);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInventoryItemChanged, const FSomnusItemInstance&, Item);
 
 /**
  * Manages a grid-based inventory for the owner actor.
@@ -16,12 +17,29 @@ UCLASS(BlueprintType, meta=(BlueprintSpawnableComponent))
 class SOMNUS_API USomnusInventoryComponent : public UActorComponent
 {
 	GENERATED_BODY()
-
+	
+public:
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Events")
+	FOnInventoryItemChanged OnItemAddedDelegate;
+	
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Events")
+	FOnInventoryItemChanged OnItemRemovedDelegate;
+	
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Events")
+	FOnInventoryItemChanged OnItemChangedDelegate;
+	
 public:	
 	USomnusInventoryComponent();
 
 	virtual void InitializeComponent() override;
-
+	
+	/** Returns all items currently in the inventory (useful for UI initialization) */
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	TArray<FSomnusItemInstance> GetAllItems() const
+	{
+		return InventoryList.Items;                                               
+	}
+	
 	/** Checks if a coordinate is within the grid bounds */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Grid")
 	bool IsValidCell(int32 X, int32 Y) const;
@@ -47,6 +65,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
 	bool RemoveItem(FGuid InstanceID);
 
+	/** Attempts to move an existing item to a new location. Server-only. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	bool TryMoveItem(FGuid InstanceID, int32 NewTopLeftX, int32 NewTopLeftY, bool bNewRotated);
+
 	/** Server RPC for adding an item anywhere. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
 	void Server_AddItemAnywhere(class USomnusItemDataAsset* ItemData, int32 Quantity = 1);
@@ -58,6 +80,10 @@ public:
 	/** Server RPC for removing an item. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
 	void Server_RemoveItem(FGuid InstanceID);
+
+	/** Server RPC for moving an item. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
+	void Server_TryMoveItem(FGuid InstanceID, int32 NewTopLeftX, int32 NewTopLeftY, bool bNewRotated);
 
 	/** Internal logic to add an item after validation. */
 	void Internal_AddItem(class USomnusItemDataAsset* ItemData, int32 Quantity, int32 TopLeftX, int32 TopLeftY, bool bRotated);
@@ -72,6 +98,7 @@ public:
 	void OnItemChanged(const FSomnusItemInstance& Item);
 
 protected:
+	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	/** Rebuilds the OccupationGrid bit array from scratch based on current items */
@@ -82,7 +109,13 @@ protected:
 
 	/** Helper to find an item instance by its unique ID */
 	const FSomnusItemInstance* FindItemInstance(FGuid ID) const;
-
+	
+	UFUNCTION(BlueprintPure, Category = "Inventory|Size")
+	int32 GetGridWidth() const { return GridWidth; };
+	
+	UFUNCTION(BlueprintPure, Category = "Inventory|Size")
+	int32 GetGridHeight() const { return GridHeight; }
+	
 	/** Total columns in the grid */
 	UPROPERTY(EditDefaultsOnly, Category = "Inventory|Grid")
 	int32 GridWidth = 10;
@@ -97,4 +130,7 @@ protected:
 
 	/** Bit array representing the occupancy of each grid cell. Rebuilt locally. */
 	TBitArray<> OccupationGrid;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Debug")
+	TMap<USomnusItemDataAsset*, int32> DefaultItems;
 };

@@ -65,7 +65,13 @@
       "Bash(\"/c/Program Files/Epic Games/UE_5.7/Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool.exe\" SomnusEditor Win64 Development \"-Project=C:/Dev/Unreal Projects/Somnus/Somnus.uproject\" -WaitMutex)",
       "Bash(find:*)",
       "Bash(cmd.exe /c \"\\\\\"C:\\\\Program Files\\\\Epic Games\\\\UE_5.7\\\\Engine\\\\Binaries\\\\DotNET\\\\UnrealBuildTool\\\\UnrealBuildTool.exe\\\\\" SomnusEditor Win64 Development \\\\\"-Project=C:\\\\Dev\\\\Unreal Projects\\\\Somnus\\\\Somnus.uproject\\\\\"\")",
-      "Bash(\"C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool.exe\" SomnusEditor Win64 Development \"-Project=C:/Dev/Unreal Projects/Somnus/Somnus.uproject\")"
+      "Bash(\"C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool.exe\" SomnusEditor Win64 Development \"-Project=C:/Dev/Unreal Projects/Somnus/Somnus.uproject\")",
+      "Bash(cmd //c '\"C:\\\\Program Files\\\\Epic Games\\\\UE_5.7\\\\Engine\\\\Build\\\\BatchFiles\\\\Build.bat\" SomnusEditor Win64 Development -Project=\"C:\\\\Dev\\\\Unreal Projects\\\\Somnus\\\\Somnus.uproject\" -WaitMutex -FromMsBuild')",
+      "PowerShell(& \"C:\\\\Program Files\\\\Epic Games\\\\UE_5.7\\\\Engine\\\\Build\\\\BatchFiles\\\\Build.bat\" SomnusEditor Win64 Development -Project=\"C:\\\\Dev\\\\Unreal Projects\\\\Somnus\\\\Somnus.uproject\" -WaitMutex -FromMsBuild | Select-Object -Last 80)",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
-  }
+  },
+  "prefersReducedMotion": false
 }

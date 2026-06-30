@@ -3,6 +3,7 @@
 
 #include "Animation/SomnusAnimInstance.h"
 
+#include "Kismet/KismetMathLibrary.h"
 #include "KismetAnimationLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Character/SomnusCharacter.h"
@@ -84,9 +85,11 @@ void USomnusAnimInstance::UpdateRotationData()
 	WorldRotation = CachedCharacter->GetActorRotation();
 	LastFrameActorYaw = ActorYaw;
 	ActorYaw = WorldRotation.Yaw;
+	
 	if (bIsInitialized)
 	{
-		DeltaActorYaw = ActorYaw - LastFrameActorYaw;
+		// Use NormalizeAxis to handle the -180 to 180 degree wrap correctly
+		DeltaActorYaw = UKismetMathLibrary::NormalizeAxis(ActorYaw - LastFrameActorYaw);
 	}
 }
 

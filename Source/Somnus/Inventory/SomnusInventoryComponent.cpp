@@ -30,6 +30,27 @@ void USomnusInventoryComponent::InitializeComponent()
 	PrintDebugGrid();
 }
 
+void USomnusInventoryComponent::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// Only grant default items on the server
+	AActor* OwnerActor = GetOwner();
+	if (OwnerActor && OwnerActor->HasAuthority())
+	{
+		for (const auto& Pair : DefaultItems)
+		{
+			USomnusItemDataAsset* ItemData = Pair.Key;
+			int32 Quantity = Pair.Value;
+
+			if (IsValid(ItemData) && Quantity > 0)
+			{
+				AddItemAnywhere(ItemData, Quantity);
+			}
+		}
+	}
+}
+
 bool USomnusInventoryComponent::IsValidCell(int32 X, int32 Y) const
 {
 	return X >= 0 && X < GridWidth && Y >= 0 && Y < GridHeight;
@@ -58,7 +79,29 @@ bool USomnusInventoryComponent::CanFitAt(USomnusItemDataAsset* ItemData, int32 T
 				int32 Index = CellPos.Y * GridWidth + CellPos.X;
 				if (OccupationGrid[Index])
 				{
-					return false;
+					bool bIsIgnoringItem = false;
+					if (IgnoreItemID.IsValid())
+					{
+						const FSomnusItemInstance* IgnoredItem = FindItemInstance(IgnoreItemID);
+						if (IgnoredItem && IgnoredItem->ItemData)
+						{
+							int32 LocalX = CellPos.X - IgnoredItem->GridPosition.X;
+							int32 LocalY = CellPos.Y - IgnoredItem->GridPosition.Y;
+							const FIntPoint IgnoredSize = IgnoredItem->ItemData->GetEffectiveSize(IgnoredItem->bRotated);
+							
+							if (LocalX >= 0 && LocalX < IgnoredSize.X && LocalY >= 0 && LocalY < IgnoredSize.Y)
+							{
+								if (IgnoredItem->ItemData->IsCellOccupied(LocalX, LocalY, IgnoredItem->bRotated))
+								{
+									bIsIgnoringItem = true;
+								}
+							}
+						}
+					}
+					if (!bIsIgnoringItem)
+					{
+						return false;
+					}
 				}
 			}
 		}
@@ -192,7 +235,7 @@ bool USomnusInventoryComponent::RemoveItem(FGuid InstanceID)
 			InventoryList.Items.RemoveAt(It.GetIndex());
 			InventoryList.MarkArrayDirty();
 			RebuildOccupationGrid();
-			PrintDebugGrid();
+			// PrintDebugGrid();
 			return true;
 		}
 	}
@@ -214,6 +257,99 @@ void USomnusInventoryComponent::Server_RemoveItem_Implementation(FGuid InstanceI
 	RemoveItem(InstanceID);
 }
 
+bool USomnusInventoryComponent::TryMoveItem(FGuid InstanceID, int32 NewTopLeftX, int32 NewTopLeftY, bool bNewRotated)
+{
+	// 1. Authority Check
+	if (!GetOwner()->HasAuthority())
+	{
+		return false;
+	}
+	
+	// 2. Find the dragged item (Source)
+	FSomnusItemInstance* SourceItem = nullptr;
+	for (FSomnusItemInstance& ItemInstance : InventoryList.Items)
+	{
+		if (ItemInstance.InstanceID == InstanceID)
+		{
+			SourceItem = &ItemInstance;
+			break;
+		}
+	}
+	
+	if (!SourceItem)
+	{
+		return false;
+	}
+	
+	// 3. Find what is sitting at the target location (Target)
+	FSomnusItemInstance* TargetItem = GetItemAt(NewTopLeftX, NewTopLeftY);
+
+	// ==========================================
+	// PATH A: Attempt a Stack Merge
+	// ==========================================
+	// If there is an item here, and it's not ourself...
+	if (TargetItem && (TargetItem->InstanceID != SourceItem->InstanceID))
+	{
+		// Can they stack together? (Same Data Asset)
+		if (TargetItem->ItemData == SourceItem->ItemData)
+		{
+			const int32 SpaceLeft = TargetItem->ItemData->MaxStackCount - TargetItem->StackCount;
+			
+			if (SpaceLeft > 0)
+			{
+				// Calculate how much we can actually transfer
+				const int32 AmountToMove = FMath::Min(SpaceLeft, SourceItem->StackCount);
+				
+				TargetItem->StackCount += AmountToMove;
+				SourceItem->StackCount -= AmountToMove;
+
+				// Mark the target as changed
+				InventoryList.MarkItemDirty(*TargetItem);
+
+				// If we completely drained the dragged item, destroy it safely
+				if (SourceItem->StackCount <= 0)
+				{
+					RemoveItem(SourceItem->InstanceID); 
+					// RemoveItem already rebuilds the grid and marks array dirty!
+					return true; 
+				}
+				
+				// Otherwise, the dragged item survived with some leftovers
+				InventoryList.MarkItemDirty(*SourceItem);
+				RebuildOccupationGrid();
+				return true;
+			}
+		}
+		
+		// If they aren't the same type, or the stack was full, the move fails.
+		return false;
+	}
+	
+	// ==========================================
+	// PATH B: Attempt a Standard Move
+	// ==========================================
+	// We get here if the cell was empty, or if we are just rotating in place.
+	// We MUST pass SourceItem->InstanceID so it ignores its own old body!
+	if (CanFitAt(SourceItem->ItemData, NewTopLeftX, NewTopLeftY, bNewRotated, SourceItem->InstanceID))
+	{
+		SourceItem->GridPosition = FIntPoint(NewTopLeftX, NewTopLeftY);
+		SourceItem->bRotated = bNewRotated;
+		
+		InventoryList.MarkItemDirty(*SourceItem);
+		RebuildOccupationGrid();
+		return true;
+	}
+	
+	// If it didn't fit, reject the move
+	return false;
+}
+
+void USomnusInventoryComponent::Server_TryMoveItem_Implementation(FGuid InstanceID, int32 NewTopLeftX, int32 NewTopLeftY, bool bNewRotated)
+{
+	TryMoveItem(InstanceID, NewTopLeftX, NewTopLeftY, bNewRotated);
+}
+
+
 void USomnusInventoryComponent::Internal_AddItem(USomnusItemDataAsset* ItemData, int32 Quantity, int32 TopLeftX, int32 TopLeftY, bool bRotated)
 {
 	FSomnusItemInstance& NewInstance = InventoryList.Items.AddDefaulted_GetRef();
@@ -224,7 +360,7 @@ void USomnusInventoryComponent::Internal_AddItem(USomnusItemDataAsset* ItemData,
 	NewInstance.InstanceID = FGuid::NewGuid();
 	InventoryList.MarkItemDirty(NewInstance);
 	RebuildOccupationGrid();
-	PrintDebugGrid();
+	// PrintDebugGrid();
 }
 
 void USomnusInventoryComponent::PrintDebugGrid() const
@@ -325,17 +461,20 @@ void USomnusInventoryComponent::OnItemAdded(const FSomnusItemInstance& Item)
 {
 	UE_LOG(LogSomnusInventory, Log, TEXT("Item Added: %s"), Item.ItemData ? *Item.ItemData->DisplayName.ToString() : TEXT("None"));
 	RebuildOccupationGrid();
+	OnItemAddedDelegate.Broadcast(Item);
 }
 
 void USomnusInventoryComponent::OnItemRemoved(const FSomnusItemInstance& Item)
 {
 	UE_LOG(LogSomnusInventory, Log, TEXT("Item Removed: %s"), Item.ItemData ? *Item.ItemData->DisplayName.ToString() : TEXT("None"));
 	RebuildOccupationGrid();
+	OnItemRemovedDelegate.Broadcast(Item);
 }
 
 void USomnusInventoryComponent::OnItemChanged(const FSomnusItemInstance& Item)
 {
 	UE_LOG(LogSomnusInventory, Log, TEXT("Item Changed: %s"), Item.ItemData ? *Item.ItemData->DisplayName.ToString() : TEXT("None"));
+	OnItemChangedDelegate.Broadcast(Item);
 }
 
 void USomnusInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

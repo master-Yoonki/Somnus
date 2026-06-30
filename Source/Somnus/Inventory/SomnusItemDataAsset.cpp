@@ -9,6 +9,18 @@ FPrimaryAssetId USomnusItemDataAsset::GetPrimaryAssetId() const
 	return FPrimaryAssetId(TEXT("SomnusItem"), AssetName);
 }
 
+#if WITH_EDITOR
+void USomnusItemDataAsset::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+	if (PropertyChangedEvent.GetMemberPropertyName() == GET_MEMBER_NAME_CHECKED(USomnusItemDataAsset, Size))
+	{
+		bool ArrayInitVal = true;
+		ShapeMask.Init(true, Size.X * Size.Y);
+	}
+}
+#endif
+
 FIntPoint USomnusItemDataAsset::GetEffectiveSize(bool bRotated) const
 {
 	// Swap Width and Height if rotated 90 degrees

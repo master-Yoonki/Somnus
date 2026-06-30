@@ -2,8 +2,8 @@
 
 ## 🚩 Current Session Overview
 - **Active Task:** Phase A — Core Grid Inventory (Tarkov-style)
-- **Current Step:** Step 1 — Item Data Asset (Size + ShapeMask)
-- **Primary AI Agent:** Gemini CLI (Current) / Claude Code (Standby)
+- **Current Step:** Step 5.5 — Debug/Starter Kit Initialization
+- **Primary AI Agent:** Gemini CLI (Current)
 
 ## ✅ Completed Tasks
 - [x] Project initialization (UE 5.7, GAS, C++)
@@ -11,27 +11,31 @@
 - [x] Definition of `USomnusItemDataAsset` base class
 - [x] **Step 1:** Implemented `Size`, `ShapeMask`, `GetEffectiveSize`, and `IsCellOccupied`.
 - [x] **Step 2:** Implemented `FSomnusItemInstance` and `FSomnusInventoryList` with FFastArraySerializer.
-- [x] **Step 3:** Integrated `USomnusInventoryComponent` into `ASomnusCharacter` (C++ implementation complete).
-- [x] **Bugfix:** Resolved `NetCore` linker errors and `OutLifetimeProps` macro naming.
+- [x] **Step 3:** Integrated `USomnusInventoryComponent` into `ASomnusCharacter`.
+- [x] **Step 4 (Logic):** Implemented `RebuildOccupationGrid` (FAS aware) and `CanFitAt` (Precise collision).
+- [x] **Bugfix:** Resolved `Accessed None` error by re-parenting `BP_SomnusCharacter` to refresh CDO.
+- [x] **Bugfix:** Resolved `RootYawOffset` stuck at 0 by defaulting `bUseControllerRotationYaw = true` in constructor.
+- [x] **Bugfix:** Resolved `UKismetMathLibrary` linker/header errors in `SomnusAnimInstance`.
+
+- [x] **Step 5 (Logic):** Completed `AddItemAnywhere` and `AddItemAt` with robust `MaxStackCount` enforcement, partial stack merging, and leftover quantity returns.
+- [x] **Step 5 (Logic):** Implemented `GetItemAt` helper utilizing precise ShapeMask boundary math (`GetEffectiveSize`) and efficient early-AABB filtering.
+- [x] **Refactoring:** Cleaned up Component API (`TryRemoveItem` -> `RemoveItem`), removed obsolete ternary operators, simplified AABB math bounds.
 
 ## 🛠 Active Work-in-Progress & Blocker
-- **Blocker (Step 3):** Blueprint `Accessed None` error.
-  - **Symptoms:** `BP_SomnusCharacter` fails to access the `Inventory` component despite the C++ constructor logging `Inventory Component Initialized`.
-  - **Susppected Cause:** Unreal Editor CDO/Blueprint synchronization issue after modifying the C++ constructor while the editor was open.
-  - **Action taken:** Verified `CreateDefaultSubobject` logic and `GetInventory()` accessor. Re-parenting or hard restart (Binaries delete) suggested.
-- **Step 4 (Scaffolded):** `OccupationGrid` (TBitArray) initialized in `InitializeComponent`. Stubs for `CanFitAt`, `FindFirstFit`, and `RebuildOccupationGrid` added to C++.
+- **UI Data Blocker:** [RESOLVED] We added a `DefaultItems` map to `BeginPlay` so we can test the UI without ground loot.
+- **Tech Debt (Item Data Asset):** In the future, we need to create a Slate Custom Detail Customization for `USomnusItemDataAsset` to show `ShapeMask` as a 2D grid instead of a 1D array.
 
 ## 🔜 Next Steps (Immediate)
-1. **Fix:** Resolve the Blueprint `Accessed None` error (Restart Editor, Re-parent BP, or Delete Binaries/Intermediate).
-2. **Implementation:** Move inline callback stubs in `SomnusItemInstance.h` to `.cpp` (if not already done) to wire logic.
-3. **Step 4:** Implement core grid math in `SomnusInventoryComponent.cpp`.
-4. **Step 5:** Implement server-authoritative mutation methods (`TryAddItem`).
-
+- [x] **Starter Kit (BeginPlay):** Added `DefaultItems` to the inventory component and implemented `BeginPlay()` to grant items.
+- [x] **Step 7 (Delegates):** Set up `FOnInventoryItemChanged` multicast delegates to sync UI with C++ data.
+- [x] **Step 6 (UI Foundation):** Created `WBP_InventoryGrid`, `WBP_InventoryItem`, and `WBP_GridCell` (Canvas Panel math is working for empty cells).
+- [x] **Step 5 (Move Item):** Implement `TryMoveItem` logic (the backbone of the drag-and-drop action).
+- [ ] **Step 8 (Drag & Drop UI):** Implement UMG Drag & Drop operations (`OnDragDetected`, `OnDrop`, and grid coordinate math).
 ## 📌 Technical Context & Rules
-- **Coordinate System:** (0,0) is Top-Left. X is Width (Columns), Y is Height (Rows).
-- **Networking:** Lyra-style Item-level callbacks.
+- **Rotation:** Character Actor rotates with Controller (`bUseControllerRotationYaw = true`). Visual counter-rotation handled by AnimBP via `RootYawOffset`.
+- **Grid Math:** Top-Left is (0,0). Boundary checks use `TopLeft + ItemSize - 1` to avoid off-by-one errors.
 - **Discipline:** Study Mode active. User types core logic; AI provides architecture/boilerplate.
-- **Debug:** `PrintDebugGrid()` is available in C++ and BP for grid visualization.
+- **Debug:** `PrintDebugGrid()` logs a visual ASCII representation of the TBitArray.
 
 ---
 

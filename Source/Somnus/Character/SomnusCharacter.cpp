@@ -25,9 +25,10 @@ ASomnusCharacter::ASomnusCharacter()
 	// Use our custom input component for Lyra-style input binding
 	OverrideInputComponentClass = USomnusInputComponent::StaticClass();
 
-	// Don't rotate when the controller rotates. Let that just affect the camera.
+	// In Lyra-style Turn In Place, we let the Actor rotate with the controller,
+	// and the AnimBP handles the visual counter-rotation via RootYawOffset.
 	bUseControllerRotationPitch = false;
-	bUseControllerRotationYaw = false;
+	bUseControllerRotationYaw = true;
 	bUseControllerRotationRoll = false;
 
 	// Configure character movement to face the direction of movement
