@@ -49,3 +49,36 @@ These are the rules and guidelines for agents working on Project Somnus.
 
 ## Documentation & Logging
 - **Obsidian Vault**: All daily logs, project discussions, and documentation should be maintained in `C:\Users\mrgna\iCloudDrive\iCloud~md~obsidian\UnrealLearning`. When asked to update daily logs, create or modify files in this vault.
+
+## Build Commands
+```bash
+# Build from command line (Development)
+"C:/Program Files/Epic Games/UE_5.7/Engine/Build/BatchFiles/Build.bat" SomnusEditor Win64 Development -Project="C:/Dev/Unreal Projects/Somnus/Somnus.uproject" -WaitMutex -FromMsBuild
+
+# Generate project files
+"C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool.exe" -projectfiles -project="C:/Dev/Unreal Projects/Somnus/Somnus.uproject" -game -rocket -progress
+```
+
+## Module Dependencies
+- **Public**: Core, CoreUObject, Engine, InputCore, EnhancedInput, GameplayAbilities, GameplayTags, GameplayTasks, AnimGraphRuntime
+
+## Architecture Details
+- **Data-Driven Weapon System**: Weapons configured in BP. `ASomnusWeapon` (base), `ASomnusMeleeWeapon` (trace sockets). `Equip()` grants abilities/tags; server-authoritative.
+- **Lyra-Style Input**: `USomnusInputConfig` maps `UInputAction` -> `FGameplayTag`. `USomnusInputComponent` binds them.
+- **HUD Integration**: UI is built in BP. `InitHUD()`, `UpdateHealthUI()` are `BlueprintImplementableEvent` driven by Attribute change delegates.
+
+## Source Layout
+```
+Source/Somnus/
+├── AbilitySystem/
+│   ├── Abilities/              # Concrete ability classes (MeleeAttack, Jump, Aim, etc.)
+│   ├── AsyncTasks/             # Blueprint async nodes (attribute/cooldown listeners)
+│   ├── Attributes/             # Attribute sets (Health, Stamina)
+│   ├── Effects/                # GameplayEffect C++ classes (Cost, Cooldown, Damage, Regen)
+│   └── Tasks/                  # Custom AbilityTasks (PlayMontageAndWaitForEvent)
+├── Animation/                  # AnimInstance + AnimNotifies
+├── Character/                  # Player character
+├── Core/                       # GameMode, PlayerState, GameplayTags
+├── Equipment/                  # Weapon base + melee weapon
+└── Input/                      # InputConfig data asset + InputComponent
+```

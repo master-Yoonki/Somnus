@@ -2,8 +2,22 @@
 
 ## 🚩 Current Session Overview
 - **Active Task:** Phase A — Core Grid Inventory (Tarkov-style)
-- **Current Step:** Step 5.5 — Debug/Starter Kit Initialization
+- **Current Step:** Step 8 — Drag & Drop UI (In Progress)
 - **Primary AI Agent:** Gemini CLI (Current)
+
+## 📝 AI Handoff Notes (Gemini -> Next Session)
+- **Listen Server Broadcast Fix Complete:** All inventory functions (`TryMoveItem`, `AddItemAnywhere`, `AddItemAt`, `Internal_AddItem`, `RemoveItem`) now manually broadcast delegates for listen server players. FAS callbacks only fire on remote clients; the listen server needs manual broadcasts. No guard needed because server-side broadcasts and FAS callbacks run on different machines.
+- **Drag & Drop BP Architecture Built:** `BP_ItemDragDrop` payload carries `WBP_Item`, `ItemInstance`, and `DragOffset`. `WBP_InventoryItem` handles `OnMouseButtonDown` (offset capture), `OnDragDetected` (payload creation + drag visual), and `OnDragCancelled` (opacity restore). `WBP_InventoryGrid` handles `OnDrop` (coordinate math + `Server_TryMoveItem` call).
+- **InitializeGrid Pattern:** Grid UI is decoupled — `InitializeGrid(InventoryComponent)` is called externally instead of self-wiring in `Event Construct`. This allows reuse for player backpack, stash, loot containers, etc.
+- **Size Box Dynamic Sizing:** Canvas Panel doesn't report desired size to parent layouts. Wrapped in a Size Box, and `InitializeGrid` sets `WidthOverride = GridWidth * TileSize`, `HeightOverride = GridHeight * TileSize`.
+- **Delegate Binding in InitializeGrid:** `HandleItemAdded`, `HandleItemRemoved`, `HandleItemChanged` are bound to the component's delegates. `HandleItemChanged` uses destroy-and-recreate pattern.
+- **Widget Tracking Map:** `WBP_InventoryGrid` stores a `Map<FGuid, WBP_InventoryItem>` to quickly find/destroy widgets by InstanceID.
+- **NEXT ACTION:** Continue Step 8. Key remaining tasks:
+  1. Implement position math in `HandleItemAdded` (`GridPosition * TileSize` for Canvas placement).
+  2. Handle `bRotated` (swap widget width/height when rotated).
+  3. Add hover preview during drag (green = valid, red = invalid placement).
+  4. Handle OnDrop failure (return item to original position).
+  5. Add right-click rotation during drag.
 
 ## ✅ Completed Tasks
 - [x] Project initialization (UE 5.7, GAS, C++)
@@ -20,17 +34,23 @@
 - [x] **Step 5 (Logic):** Completed `AddItemAnywhere` and `AddItemAt` with robust `MaxStackCount` enforcement, partial stack merging, and leftover quantity returns.
 - [x] **Step 5 (Logic):** Implemented `GetItemAt` helper utilizing precise ShapeMask boundary math (`GetEffectiveSize`) and efficient early-AABB filtering.
 - [x] **Refactoring:** Cleaned up Component API (`TryRemoveItem` -> `RemoveItem`), removed obsolete ternary operators, simplified AABB math bounds.
+- [x] **Step 5 (Move Item):** Implement `TryMoveItem` logic (the backbone of the drag-and-drop action).
+- [x] **Step 7 (Delegates):** Set up `FOnInventoryItemChanged` multicast delegates to sync UI with C++ data.
+- [x] **Step 6 (UI Foundation):** Created `WBP_InventoryGrid`, `WBP_InventoryItem`, and `WBP_GridCell` (Canvas Panel math is working for empty cells).
+- [x] **Starter Kit (BeginPlay):** Added `DefaultItems` to the inventory component and implemented `BeginPlay()` to grant items.
+- [x] **Bugfix:** Listen server FAS broadcast — added manual delegate broadcasts for listen server players across all inventory mutation functions.
 
-## 🛠 Active Work-in-Progress & Blocker
-- **UI Data Blocker:** [RESOLVED] We added a `DefaultItems` map to `BeginPlay` so we can test the UI without ground loot.
+## 🛠 Active Work-in-Progress
+- [ ] **Step 8 (Drag & Drop UI):** BP payload, drag detection, and OnDrop coordinate math are wired up. Remaining: canvas positioning, rotation handling, hover preview, failure recovery.
 - **Tech Debt (Item Data Asset):** In the future, we need to create a Slate Custom Detail Customization for `USomnusItemDataAsset` to show `ShapeMask` as a 2D grid instead of a 1D array.
 
 ## 🔜 Next Steps (Immediate)
-- [x] **Starter Kit (BeginPlay):** Added `DefaultItems` to the inventory component and implemented `BeginPlay()` to grant items.
-- [x] **Step 7 (Delegates):** Set up `FOnInventoryItemChanged` multicast delegates to sync UI with C++ data.
-- [x] **Step 6 (UI Foundation):** Created `WBP_InventoryGrid`, `WBP_InventoryItem`, and `WBP_GridCell` (Canvas Panel math is working for empty cells).
-- [x] **Step 5 (Move Item):** Implement `TryMoveItem` logic (the backbone of the drag-and-drop action).
-- [ ] **Step 8 (Drag & Drop UI):** Implement UMG Drag & Drop operations (`OnDragDetected`, `OnDrop`, and grid coordinate math).
+- [ ] **Canvas Placement:** `HandleItemAdded` needs `GridPosition * TileSize` to set widget position on Canvas.
+- [ ] **Rotation Visual:** Swap widget Width/Height when `bRotated` is true.
+- [ ] **Hover Preview:** Show green/red tint on grid cells during drag to indicate valid/invalid placement.
+- [ ] **Drop Failure:** If `Server_TryMoveItem` returns false (or move fails), restore item to original position.
+- [ ] **Right-Click Rotate:** Allow rotation during drag via right-click.
+
 ## 📌 Technical Context & Rules
 - **Rotation:** Character Actor rotates with Controller (`bUseControllerRotationYaw = true`). Visual counter-rotation handled by AnimBP via `RootYawOffset`.
 - **Grid Math:** Top-Left is (0,0). Boundary checks use `TopLeft + ItemSize - 1` to avoid off-by-one errors.
@@ -51,7 +71,7 @@ Unreal's delta-serialization loop calls them on each changed item. The list only
 `NetDeltaSerialize` and the `OwnerComponent` back-pointer.
 
 **OwnerComponent on the list:**
-Use `UPROPERTY(NotReplicated)` with `TObjectPtr<USomnusInventoryComponent>`. This tells UE's GC
+Use `UPROPERTY(NotReplicated)` with `TObjectPtr<class USomnusInventoryComponent>`. This tells UE's GC
 to track the pointer without serializing it over the network. It is set locally post-construction
 (by the component on both server and client), never sent over the wire.
 

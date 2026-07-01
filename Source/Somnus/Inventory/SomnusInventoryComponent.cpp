@@ -169,6 +169,7 @@ int32 USomnusInventoryComponent::AddItemAnywhere(USomnusItemDataAsset* ItemData,
 			{
 				Item.StackCount += QuantityToMerge;
 				InventoryList.MarkItemDirty(Item);
+				OnItemChanged(Item);
 				QuantityToAdd -= QuantityToMerge;
 			}
 		}
@@ -209,6 +210,7 @@ int32 USomnusInventoryComponent::AddItemAt(USomnusItemDataAsset* ItemData, int32
 				const int32 QuantityToAssign = FMath::Min(AvailableSpace, Quantity);
 				OccupiedItem->StackCount += QuantityToAssign;
 				InventoryList.MarkItemDirty(*OccupiedItem);
+				OnItemChanged(*OccupiedItem);
 				return Quantity - QuantityToAssign;
 			}
 		}
@@ -232,6 +234,8 @@ bool USomnusInventoryComponent::RemoveItem(FGuid InstanceID)
 	{
 		if (It->InstanceID == InstanceID)
 		{
+			// Broadcast before removing so delegates can still read item data
+			OnItemRemoved(*It);
 			InventoryList.Items.RemoveAt(It.GetIndex());
 			InventoryList.MarkArrayDirty();
 			RebuildOccupationGrid();
@@ -305,17 +309,19 @@ bool USomnusInventoryComponent::TryMoveItem(FGuid InstanceID, int32 NewTopLeftX,
 
 				// Mark the target as changed
 				InventoryList.MarkItemDirty(*TargetItem);
+				OnItemChanged(*TargetItem);
 
 				// If we completely drained the dragged item, destroy it safely
 				if (SourceItem->StackCount <= 0)
 				{
+					// RemoveItem already broadcasts OnItemRemoved, rebuilds grid, and marks array dirty
 					RemoveItem(SourceItem->InstanceID); 
-					// RemoveItem already rebuilds the grid and marks array dirty!
 					return true; 
 				}
 				
 				// Otherwise, the dragged item survived with some leftovers
 				InventoryList.MarkItemDirty(*SourceItem);
+				OnItemChanged(*SourceItem);
 				RebuildOccupationGrid();
 				return true;
 			}
@@ -337,6 +343,7 @@ bool USomnusInventoryComponent::TryMoveItem(FGuid InstanceID, int32 NewTopLeftX,
 		
 		InventoryList.MarkItemDirty(*SourceItem);
 		RebuildOccupationGrid();
+		OnItemChanged(*SourceItem);
 		return true;
 	}
 	
@@ -360,6 +367,7 @@ void USomnusInventoryComponent::Internal_AddItem(USomnusItemDataAsset* ItemData,
 	NewInstance.InstanceID = FGuid::NewGuid();
 	InventoryList.MarkItemDirty(NewInstance);
 	RebuildOccupationGrid();
+	OnItemAdded(NewInstance);
 	// PrintDebugGrid();
 }
 
