@@ -482,6 +482,7 @@ void USomnusInventoryComponent::OnItemRemoved(const FSomnusItemInstance& Item)
 void USomnusInventoryComponent::OnItemChanged(const FSomnusItemInstance& Item)
 {
 	UE_LOG(LogSomnusInventory, Log, TEXT("Item Changed: %s"), Item.ItemData ? *Item.ItemData->DisplayName.ToString() : TEXT("None"));
+	RebuildOccupationGrid();
 	OnItemChangedDelegate.Broadcast(Item);
 }
 
