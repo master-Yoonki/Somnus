@@ -54,4 +54,8 @@ namespace SomnusTags
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Ability_Attack);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Ability_Aim);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Ability_Jump);
+	
+	// Zombie
+	// Zombie Ability identity tags
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Zombie_Melee);
 };

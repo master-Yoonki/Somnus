@@ -12,7 +12,8 @@ enum class EZombieState : uint8
 	Unaware,
 	Aware,
 	Hunt_Certain,
-	Hunt_Predict
+	Hunt_Predict,
+	Attack
 };
 /**
  * 
@@ -37,6 +38,9 @@ public:
 	UAIPerceptionComponent* GetAIPerceptionComponent() const { return AIPerceptionComponent; }
 	void UpdateTrackingData(FVector Location, FVector Velocity, float Time);
 
+	
+	UFUNCTION(BlueprintPure, Category = "AI|State")
+	EZombieState GetCurrentState() const { return CurrentState; }
 protected:
 	// --- Overrides ---
 
@@ -60,6 +64,7 @@ private:
 
 	// --- State ---
 
+	
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "AI|State", meta = (AllowPrivateAccess = "true"))
 	EZombieState CurrentState;
 

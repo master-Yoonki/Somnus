@@ -33,22 +33,43 @@ void UBTService_ProximityCheck::TickNode(UBehaviorTreeComponent& OwnerComp, uint
 
 	const float HuntDistance = ZombieController->GetHuntStartDistance();
 	const FVector PawnLocation = ControlledPawn->GetActorLocation();
+	const float AttackDistance = 150.f;
 
 	// Check all currently perceived actors for proximity
 	TArray<AActor*> PerceivedActors;
 	PerceptionComp->GetCurrentlyPerceivedActors(nullptr, PerceivedActors);
-
+	
+	EZombieState CurrentState = ZombieController->GetCurrentState();
+	
 	for (AActor* Actor : PerceivedActors)
 	{
 		if (!Cast<ASomnusCharacter>(Actor)) continue;
 
 		const float Distance = FVector::Distance(PawnLocation, Actor->GetActorLocation());
+		// Instant override: If any player gets into melee range, instantly snap to attack regardless of current state.
+		if (Distance < AttackDistance)
+		{
+			ZombieController->SetCurrentTarget(Actor);
+			ZombieController->SetState(EZombieState::Attack);
+			return;
+		}
 		if (Distance < HuntDistance)
 		{
 			// Lock onto this target and start chasing
 			ZombieController->SetCurrentTarget(Actor);
 			ZombieController->SetState(EZombieState::Hunt_Certain);
 			return;
+		}
+	}
+	if (CurrentState == EZombieState::Attack)
+	{
+		if (ZombieController->GetCurrentTarget() != nullptr)
+		{
+			ZombieController->SetState(EZombieState::Hunt_Predict);
+		}
+		else
+		{
+			ZombieController->SetState(EZombieState::Aware);
 		}
 	}
 }

@@ -50,4 +50,8 @@ namespace SomnusTags
 	UE_DEFINE_GAMEPLAY_TAG(Input_Ability_Attack, "Input.Ability.Attack");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Ability_Aim, "Input.Ability.Aim");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Ability_Jump, "Input.Ability.Jump");
+	
+	// Zombie
+	// Zombie Ability identity tags
+	UE_DEFINE_GAMEPLAY_TAG(Ability_Zombie_Melee, "Ability.Zombie.Melee");
 }

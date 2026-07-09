@@ -3,11 +3,14 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
 #include "SomnusZombieCharacter.generated.h"
 
+class USomnusAttributeSet;
+
 UCLASS()
-class SOMNUS_API ASomnusZombieCharacter : public ACharacter
+class SOMNUS_API ASomnusZombieCharacter : public ACharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
@@ -25,5 +28,32 @@ public:
 
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	
+	// Called when the server assigns a controller to this character
+	virtual void PossessedBy(AController* NewController) override;
+	
+	/* Ability System Component */
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return AbilitySystemComponent; }
+	USomnusAttributeSet* GetAttributeSet() const { return AttributeSet; }
+	
+	// Abilities granted at possession time (innate abilities like Jump)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
+	TArray<TSubclassOf<class UGameplayAbility>> DefaultAbilities;
+protected:
+	// The core component that handles all GAS logic
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
+	
+	UPROPERTY()
+	TObjectPtr<USomnusAttributeSet> AttributeSet;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
+	TArray<TSubclassOf<class UGameplayEffect>> DefaultGameplayEffects;
+	
+	// Called when Health reaches zero. Cancels abilities, ragdolls.
+	// HitDirection is the direction of the killing blow (for ragdoll impulse). Zero = no impulse.
+	UFUNCTION(BlueprintCallable, Category = "GAS")
+	virtual void Die();
 
+	void OnHealthChanged(float CurrentValue, float MaxValue);
 };
