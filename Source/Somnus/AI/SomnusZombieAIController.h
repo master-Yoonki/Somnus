@@ -6,6 +6,8 @@
 #include "AIController.h"
 #include "SomnusZombieAIController.generated.h"
 
+DECLARE_LOG_CATEGORY_EXTERN(LogZombieAI, Log, All)
+
 UENUM(BlueprintType)
 enum class EZombieState : uint8
 {
@@ -29,7 +31,7 @@ public:
 	// --- Public API (called by BT nodes) ---
 
 	UFUNCTION(BlueprintCallable, Category = "AI")
-	void SetState(EZombieState NewState);
+	void SetState(EZombieState NewState, const FString& Reason = TEXT("UnSpecified"));
 
 	TObjectPtr<AActor> GetCurrentTarget() const { return CurrentTarget; }
 	void SetCurrentTarget(AActor* NewTarget);
@@ -48,7 +50,7 @@ protected:
 
 private:
 	// --- Components ---
-
+	void ExecuteTransitionLogic(UBlackboardComponent* BlackboardComponent, EZombieState OldState, EZombieState NewState);
 	UPROPERTY(EditDefaultsOnly, Category = "AI|Components")
 	TObjectPtr<class UBehaviorTree> BehaviorTree;
 

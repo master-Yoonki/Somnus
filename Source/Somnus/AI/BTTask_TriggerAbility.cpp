@@ -34,21 +34,36 @@ EBTNodeResult::Type UBTTask_TriggerAbility::ExecuteTask(UBehaviorTreeComponent& 
 		CachedBTComponent = &OwnerComp;
 		return EBTNodeResult::InProgress;
 	}
-	else
-	{
-		return EBTNodeResult::Failed;
-	}
+
+	return EBTNodeResult::Failed;
+}
+
+EBTNodeResult::Type UBTTask_TriggerAbility::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
+{
+	check(CachedASC);
+	check(CachedBTComponent);
 	
-	return Super::ExecuteTask(OwnerComp, NodeMemory);
+	FGameplayTagContainer SingleTag;
+	SingleTag.AddTag(AbilityTagToActivate);
+	CachedASC->OnAbilityEnded.RemoveAll(this);
+	CachedASC->CancelAbilities(&SingleTag);
+	CachedASC = nullptr;
+	CachedBTComponent = nullptr;
+	return EBTNodeResult::Aborted;
 }
 
 void UBTTask_TriggerAbility::OnAbilityEnded(const FAbilityEndedData& AbilityEndedData)
 {
-	if (!CachedASC || !CachedBTComponent) return;
+	check(CachedASC);
+	check(CachedBTComponent);
+	
 	if (AbilityEndedData.AbilityThatEnded->GetAssetTags().HasTag(AbilityTagToActivate))
 	{
 		CachedASC->OnAbilityEnded.RemoveAll(this);
 		EBTNodeResult::Type NodeResult = AbilityEndedData.bWasCancelled ? EBTNodeResult::Failed : EBTNodeResult::Succeeded;
 		FinishLatentTask(*CachedBTComponent, NodeResult);
+		
+		CachedASC = nullptr;
+		CachedBTComponent = nullptr;
 	}
 }

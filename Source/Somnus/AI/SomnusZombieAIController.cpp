@@ -10,6 +10,8 @@
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISenseConfig_Sight.h"
 
+DEFINE_LOG_CATEGORY(LogZombieAI)
+
 ASomnusZombieAIController::ASomnusZombieAIController()
 {
 	AIPerceptionComponent = CreateDefaultSubobject<UAIPerceptionComponent>("AIPerceptionComponent");
@@ -51,6 +53,80 @@ void ASomnusZombieAIController::OnPossess(APawn* InPawn)
 		SetState(EZombieState::Unaware);
 	}
 	
+}
+
+void ASomnusZombieAIController::ExecuteTransitionLogic(UBlackboardComponent* BlackboardComponent, EZombieState OldState, EZombieState NewState)
+{
+	if (!BlackboardComponent) return;
+	// Exit logic for OLD state
+	switch (OldState)
+	{
+	case EZombieState::Aware:
+		{
+			if (NewState != EZombieState::Aware)
+			{
+				GetWorldTimerManager().ClearTimer(AwareTimerHandle);
+			}
+		}
+		break;
+			
+	case EZombieState::Hunt_Certain:
+		{
+			// Clear grace timer if re-acquiring target or leaving chase
+			GetWorldTimerManager().ClearTimer(GraceTimerHandle);
+		}
+		break;
+	default: break;
+	}
+		
+	// Enter logic for NEW state
+	switch (NewState)
+	{
+	case EZombieState::Aware:
+		{
+			// SetTimer on an existing handle automatically clears the old timer,
+			// so this handles both fresh entry AND re-entry (timer reset)
+			GetWorldTimerManager().SetTimer(AwareTimerHandle, this, &ASomnusZombieAIController::OnAwareDurationExpired, AwareDuration, false);
+		}
+		break;
+	case EZombieState::Hunt_Predict:
+		{
+			// Extrapolate where the player likely went (overshoot by 2.5x to be aggressive)
+			const float ElapsedTime = GetWorld()->GetTimeSeconds() - LastSeenTime;
+			FVector TargetSpot = LastKnownLocation + (LastKnownVelocity * ElapsedTime * 2.5f);
+
+			// Prevent projecting through walls by casting a ray
+			FHitResult HitResult;
+			FCollisionQueryParams QueryParams;
+			if (APawn* ControlledPawn = GetPawn())
+			{
+				QueryParams.AddIgnoredActor(ControlledPawn);
+			}
+				
+			if (GetWorld()->LineTraceSingleByChannel(HitResult, LastKnownLocation, TargetSpot, ECC_Visibility, QueryParams))
+			{
+				// We hit a wall! Cap the prediction at the wall
+				TargetSpot = HitResult.Location;
+			}
+
+			// Snap to NavMesh — if extrapolation landed off-mesh, fall back to last known position
+			FNavLocation ProjectedLocation;
+			FVector FinalLocation;
+			if (UNavigationSystemV1::GetCurrent(GetWorld())->ProjectPointToNavigation(TargetSpot, ProjectedLocation))
+			{
+				FinalLocation = ProjectedLocation.Location;
+			}
+			else
+			{
+				FinalLocation = LastKnownLocation;
+			}
+
+			BlackboardComponent->SetValueAsVector("PredictedLocation", FinalLocation);
+			
+		}
+		break;
+	default: break;
+	}
 }
 
 void ASomnusZombieAIController::OnTargetDetected(AActor* Actor, FAIStimulus const Stimulus)
@@ -114,80 +190,31 @@ void ASomnusZombieAIController::OnTargetDetected(AActor* Actor, FAIStimulus cons
 	}
 }
 
-void ASomnusZombieAIController::SetState(EZombieState NewState)
+void ASomnusZombieAIController::SetState(EZombieState NewState, const FString& Reason)
 {
-	if (UBlackboardComponent* BlackboardComponent = GetBlackboardComponent())
+	EZombieState OldState = CurrentState;
+	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
+	ExecuteTransitionLogic(BlackboardComponent, OldState, NewState);
+	CurrentState = NewState;
+	if (BlackboardComponent)
 	{
-			// Exit logic for OLD state
-		switch (CurrentState)
-		{
-		case EZombieState::Aware:
-			{
-				if (NewState != EZombieState::Aware)
-				{
-					GetWorldTimerManager().ClearTimer(AwareTimerHandle);
-				}
-			}
-			break;
-			
-		case EZombieState::Hunt_Certain:
-			{
-				// Clear grace timer if re-acquiring target or leaving chase
-				GetWorldTimerManager().ClearTimer(GraceTimerHandle);
-			}
-			break;
-		default: break;
-		}
-		
-		// Enter logic for NEW state
-		switch (NewState)
-		{
-		case EZombieState::Aware:
-			{
-				// SetTimer on an existing handle automatically clears the old timer,
-				// so this handles both fresh entry AND re-entry (timer reset)
-				GetWorldTimerManager().SetTimer(AwareTimerHandle, this, &ASomnusZombieAIController::OnAwareDurationExpired, AwareDuration, false);
-			}
-			break;
-		case EZombieState::Hunt_Predict:
-			{
-				// Extrapolate where the player likely went (overshoot by 2.5x to be aggressive)
-				const float ElapsedTime = GetWorld()->GetTimeSeconds() - LastSeenTime;
-				FVector TargetSpot = LastKnownLocation + (LastKnownVelocity * ElapsedTime * 2.5f);
-
-				// Prevent projecting through walls by casting a ray
-				FHitResult HitResult;
-				FCollisionQueryParams QueryParams;
-				if (APawn* ControlledPawn = GetPawn())
-				{
-					QueryParams.AddIgnoredActor(ControlledPawn);
-				}
-				
-				if (GetWorld()->LineTraceSingleByChannel(HitResult, LastKnownLocation, TargetSpot, ECC_Visibility, QueryParams))
-				{
-					// We hit a wall! Cap the prediction at the wall
-					TargetSpot = HitResult.Location;
-				}
-
-				// Snap to NavMesh — if extrapolation landed off-mesh, fall back to last known position
-				FNavLocation ProjectedLocation;
-				FVector FinalLocation;
-				if (UNavigationSystemV1::GetCurrent(GetWorld())->ProjectPointToNavigation(TargetSpot, ProjectedLocation))
-				{
-					FinalLocation = ProjectedLocation.Location;
-				}
-				else
-				{
-					FinalLocation = LastKnownLocation;
-				}
-
-				BlackboardComponent->SetValueAsVector("PredictedLocation", FinalLocation);
-			}
-			break;
-		default: break;
-		}
 		BlackboardComponent->SetValueAsEnum("ZombieState", static_cast<uint8>(NewState));
-		CurrentState = NewState;
+	}
+	
+	const bool bStateChanged = (OldState != NewState);
+	const bool bIsImportantReentry = (!bStateChanged && (
+			NewState == EZombieState::Aware || 
+			NewState == EZombieState::Hunt_Certain || 
+			NewState == EZombieState::Hunt_Predict));
+	
+	if (bStateChanged || bIsImportantReentry)
+	{
+		UE_LOG(LogZombieAI, Log, TEXT("[%s] State: %s -> %s | Target : %s | Reason: %s"),
+			  *GetName(),
+			  *UEnum::GetValueAsString(OldState),
+			  *UEnum::GetValueAsString(NewState),
+			  CurrentTarget ? *CurrentTarget->GetName() : TEXT("None"),
+			  *Reason);
 	}
 }
 
