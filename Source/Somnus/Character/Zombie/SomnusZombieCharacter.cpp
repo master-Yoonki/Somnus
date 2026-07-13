@@ -9,6 +9,8 @@
 #include "AbilitySystem/Abilities/Zombie/SomnusGA_ZombieMeleeAttack.h"
 #include "AbilitySystem/Attributes/SomnusAttributeSet.h"
 #include "Components/CapsuleComponent.h"
+#include "Core/SomnusGameplayTags.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 // Sets default values
 ASomnusZombieCharacter::ASomnusZombieCharacter()
@@ -96,17 +98,29 @@ void ASomnusZombieCharacter::OnHealthChanged(float CurrentValue, float MaxValue)
 
 void ASomnusZombieCharacter::Die()
 {
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	check(ASC);
+	if (ASC->HasMatchingGameplayTag(SomnusTags::State_Dead))
+	{
+		return;
+	}
+	{
+		// Server only logic
+		ASC->AddLooseGameplayTag(SomnusTags::State_Dead);
+		ASC->CancelAllAbilities();
+		DetachFromControllerPendingDestroy();
+		SetLifeSpan(5.f);
+	}
 	MulticastZombieDeath();
 }
 
 void ASomnusZombieCharacter::MulticastZombieDeath_Implementation()
-{
+{  		
+	GetCharacterMovement()->SetMovementMode(MOVE_None); 
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetMesh()->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 	GetMesh()->SetCollisionProfileName(TEXT("Ragdoll"));
 	GetMesh()->SetAllBodiesSimulatePhysics(true);
 	GetMesh()->SetSimulatePhysics(true);
 	GetMesh()->WakeAllRigidBodies();
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	DetachFromControllerPendingDestroy();
-	SetLifeSpan(5.f);
 }
