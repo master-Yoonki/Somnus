@@ -17,9 +17,16 @@ enum class EZombieState : uint8
 	Hunt_Predict,
 	Attack
 };
-/**
- * 
- */
+
+USTRUCT(BlueprintType)
+struct FZombieStateConfig
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "State")
+	float MovementSpeed = 150.0f;
+};
+
 UCLASS()
 class SOMNUS_API ASomnusZombieAIController : public AAIController
 {
@@ -33,6 +40,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "AI")
 	void SetState(EZombieState NewState, const FString& Reason = TEXT("UnSpecified"));
 
+	UFUNCTION(BlueprintCallable, Category = "AI|State Config")
+	void ApplyStateConfig(EZombieState NewState);
+	
 	TObjectPtr<AActor> GetCurrentTarget() const { return CurrentTarget; }
 	void SetCurrentTarget(AActor* NewTarget);
 	float GetHuntStartDistance() const { return HuntStartDistance; }
@@ -99,6 +109,9 @@ private:
 	void OnGraceDurationExpired();
 
 	// --- Configuration ---
+	
+	UPROPERTY(EditDefaultsOnly, Category = "AI|State Config")
+	TMap<EZombieState, FZombieStateConfig> StateConfigs;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AI|Config")
 	float MemoryTimeout = 5.0f;

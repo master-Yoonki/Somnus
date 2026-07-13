@@ -7,6 +7,7 @@
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Character/SomnusCharacter.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISenseConfig_Sight.h"
 
@@ -25,6 +26,12 @@ ASomnusZombieAIController::ASomnusZombieAIController()
 	AIPerceptionComponent->SetDominantSense(SightConfig->GetSenseImplementation());
 	
 	AIPerceptionComponent->OnTargetPerceptionUpdated.AddDynamic(this, &ASomnusZombieAIController::OnTargetDetected);
+
+	StateConfigs.Add(EZombieState::Unaware,      FZombieStateConfig{  38.f });  // Walk_01
+	StateConfigs.Add(EZombieState::Aware,        FZombieStateConfig{ 127.f });  // Walk_Fast01
+	StateConfigs.Add(EZombieState::Hunt_Predict, FZombieStateConfig{ 320.f });  // Run_01
+	StateConfigs.Add(EZombieState::Hunt_Certain, FZombieStateConfig{ 697.f });  // Sprint_01
+	StateConfigs.Add(EZombieState::Attack,       FZombieStateConfig{   0.f });
 }
 
 void ASomnusZombieAIController::SetCurrentTarget(AActor* NewTarget)
@@ -195,6 +202,8 @@ void ASomnusZombieAIController::SetState(EZombieState NewState, const FString& R
 	EZombieState OldState = CurrentState;
 	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
 	ExecuteTransitionLogic(BlackboardComponent, OldState, NewState);
+	ApplyStateConfig(NewState);
+	
 	CurrentState = NewState;
 	if (BlackboardComponent)
 	{
@@ -215,6 +224,20 @@ void ASomnusZombieAIController::SetState(EZombieState NewState, const FString& R
 			  *UEnum::GetValueAsString(NewState),
 			  CurrentTarget ? *CurrentTarget->GetName() : TEXT("None"),
 			  *Reason);
+	}
+}
+
+void ASomnusZombieAIController::ApplyStateConfig(EZombieState NewState)
+{
+	const FZombieStateConfig* Config = StateConfigs.Find(NewState);
+	if (!Config) return;
+	
+	if (ACharacter* ZombieCharacter = Cast<ACharacter>(GetPawn()))
+	{
+		if (UCharacterMovementComponent* Move = ZombieCharacter->GetCharacterMovement())
+		{
+			Move->MaxWalkSpeed = Config->MovementSpeed;
+		}
 	}
 }
 

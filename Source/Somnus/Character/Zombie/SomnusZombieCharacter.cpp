@@ -96,6 +96,16 @@ void ASomnusZombieCharacter::OnHealthChanged(float CurrentValue, float MaxValue)
 
 void ASomnusZombieCharacter::Die()
 {
+	MulticastZombieDeath();
+}
+
+void ASomnusZombieCharacter::MulticastZombieDeath_Implementation()
+{
+	GetMesh()->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+	GetMesh()->SetCollisionProfileName(TEXT("Ragdoll"));
+	GetMesh()->SetAllBodiesSimulatePhysics(true);
+	GetMesh()->SetSimulatePhysics(true);
+	GetMesh()->WakeAllRigidBodies();
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	DetachFromControllerPendingDestroy();
 	SetLifeSpan(5.f);

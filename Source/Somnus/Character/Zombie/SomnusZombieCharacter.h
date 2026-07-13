@@ -50,10 +50,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
 	TArray<TSubclassOf<class UGameplayEffect>> DefaultGameplayEffects;
 	
-	// Called when Health reaches zero. Cancels abilities, ragdolls.
-	// HitDirection is the direction of the killing blow (for ragdoll impulse). Zero = no impulse.
+	// Called when Health reaches zero (server). Runs GAS cleanup then multicasts the ragdoll.
 	UFUNCTION(BlueprintCallable, Category = "GAS")
 	virtual void Die();
+
+	// Visual death applied on every machine: disables collision, stops movement, ragdolls the mesh.
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastZombieDeath();
 
 	void OnHealthChanged(float CurrentValue, float MaxValue);
 };
