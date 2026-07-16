@@ -3,6 +3,7 @@
 
 #include "AbilitySystem/Attributes/SomnusAttributeSet.h"
 #include "Character/SomnusCharacter.h"
+#include "Core/SomnusGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 
 USomnusAttributeSet::USomnusAttributeSet()
@@ -81,6 +82,21 @@ void USomnusAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCall
 						HitDirection = (HitResult->TraceEnd - HitResult->TraceStart).GetSafeNormal();
 					}
 					Character->Die(HitDirection);
+				}
+			}
+			else
+			{
+				// Only physical hits flinch — periodic/environmental damage carries no HitResult and shouldn't stagger
+				const FGameplayEffectContextHandle Context = Data.EffectSpec.GetEffectContext();
+				if (Context.GetHitResult())
+				{
+					FGameplayEventData GameplayEventData;
+					GameplayEventData.EventTag = SomnusTags::Event_HitReact;
+					GameplayEventData.Instigator = Context.GetInstigator();
+					GameplayEventData.ContextHandle = Context;
+					GameplayEventData.EventMagnitude = DamageDone;
+					UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent();
+					ASC->HandleGameplayEvent(SomnusTags::Event_HitReact, &GameplayEventData);
 				}
 			}
 		}

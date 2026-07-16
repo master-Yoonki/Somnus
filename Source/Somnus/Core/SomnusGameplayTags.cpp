@@ -15,6 +15,7 @@ namespace SomnusTags
 	// Events
 	UE_DEFINE_GAMEPLAY_TAG(Event_Melee_Hit, "Event.Melee.Hit");
 	UE_DEFINE_GAMEPLAY_TAG(Event_Death, "Event.Death");
+	UE_DEFINE_GAMEPLAY_TAG(Event_HitReact, "Event.HitReact");
 
 	// Weapon-granted permission tags
 	UE_DEFINE_GAMEPLAY_TAG(Weapon_Enable_HeavyAttack, "Weapon.Enable.HeavyAttack");
@@ -26,6 +27,7 @@ namespace SomnusTags
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Melee_Light, "Ability.Melee.Light");
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Aim, "Ability.Aim");
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Jump, "Ability.Jump");
+	UE_DEFINE_GAMEPLAY_TAG(Ability_HitReact, "Ability.HitReact");
 
 	// Cooldown tags
 	UE_DEFINE_GAMEPLAY_TAG(Cooldown_Ability_Jump, "Cooldown.Ability.Jump");

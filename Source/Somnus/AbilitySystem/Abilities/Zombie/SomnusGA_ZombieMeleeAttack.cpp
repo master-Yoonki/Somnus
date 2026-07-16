@@ -74,6 +74,7 @@ UAnimMontage* USomnusGA_ZombieMeleeAttack::SelectAttackMontage(AActor* TargetAct
 	AActor* SourceActor = CurrentActorInfo->OwnerActor.Get();
 	if (!SourceActor) return nullptr;
 	if (!TargetActor) return nullptr;
+	if (AttackMontages.IsEmpty()) return nullptr;
 	
 	const float Distance = FVector::Dist2D(SourceActor->GetActorLocation(), TargetActor->GetActorLocation());
 	FRotator DirectionToTarget = UKismetMathLibrary::FindLookAtRotation(SourceActor->GetActorLocation(), TargetActor->GetActorLocation());
@@ -98,25 +99,23 @@ UAnimMontage* USomnusGA_ZombieMeleeAttack::SelectAttackMontage(AActor* TargetAct
 			bAngleValid = (AngleToTarget >= MontageConfig.MinAngle || AngleToTarget <= MontageConfig.MaxAngle);
 		}
 	
-		bool bIsRangeValid = false;
+		bool bIsRangeValid = 
+			FMath::IsWithin(Distance, MontageConfig.MinDistance, MontageConfig.MaxDistance);
 		
-		if (FMath::IsWithin(Distance, MontageConfig.MinDistance, MontageConfig.MaxDistance))
-		
-			if (bAngleValid && bIsRangeValid)
-			{
-				ValidMontages.Add(&MontageConfig);
-			}
+		if (bAngleValid && bIsRangeValid)
+		{
+			ValidMontages.Add(&MontageConfig);
+		}
 	}
 	
 	if (ValidMontages.IsEmpty())
 	{
-		ValidMontages.Empty();
 		for (FSomnusZombieAttackMontage& MontageConfig : AttackMontages)
 		{
 			ValidMontages.Add(&MontageConfig);
 		}
-		return PickByPriority(ValidMontages)->Montage;
 	}
+	
 	return PickByPriority(ValidMontages)->Montage;
 }
 
@@ -176,8 +175,14 @@ void USomnusGA_ZombieMeleeAttack::OnMeleeHit(FGameplayTag EventTag, FGameplayEve
 	}
 
 	FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(DamageEffectClass);
+
 	if (SpecHandle.IsValid())
-	{
+	{	
+		if (EventData.TargetData.Num() > 0)
+		{
+			FHitResult HitResult = UAbilitySystemBlueprintLibrary::GetHitResultFromTargetData(EventData.TargetData, 0);
+			SpecHandle.Data->GetContext().AddHitResult(HitResult);
+		}
 		SpecHandle.Data->SetSetByCallerMagnitude(SomnusTags::Data_Damage, DamageAmount);
 		TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 	}

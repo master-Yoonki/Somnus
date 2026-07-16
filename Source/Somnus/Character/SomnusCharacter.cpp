@@ -19,6 +19,7 @@
 #include "Abilities/GameplayAbility.h"
 #include "Core/SomnusGameMode.h"
 #include "Inventory/SomnusInventoryComponent.h"
+#include "Character/SomnusHitReactComponent.h"
 
 ASomnusCharacter::ASomnusCharacter()
 {
@@ -48,6 +49,8 @@ ASomnusCharacter::ASomnusCharacter()
 
 	// Create the inventory component
 	Inventory = CreateDefaultSubobject<USomnusInventoryComponent>(TEXT("Inventory"));
+
+	HitReact = CreateDefaultSubobject<USomnusHitReactComponent>(TEXT("HitReact"));
 
 	CurrentGait = ESomnusGait::None;
 }
@@ -412,6 +415,10 @@ void ASomnusCharacter::Die(const FVector& HitDirection)
 
 void ASomnusCharacter::MulticastDeath_Implementation(const FVector& HitDirection)
 {
+	// Release the mesh before the ragdoll claims it: an in-flight flinch would otherwise keep
+	// blending the corpse's upper body back toward the animation pose.
+	HitReact->StopHitReact();
+
 	// Disable capsule collision and stop movement
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetCharacterMovement()->SetMovementMode(MOVE_None);

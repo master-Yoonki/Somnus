@@ -7,6 +7,7 @@
 #include "Character/SomnusCharacter.h"
 #include "Core/SomnusGameplayTags.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Core/SomnusCollisionChannels.h"
 
 void UANS_ZombieMeleeTrace::NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,
                                         float TotalDuration, const FAnimNotifyEventReference& EventReference)
@@ -41,7 +42,7 @@ void UANS_ZombieMeleeTrace::NotifyTick(USkeletalMeshComponent* MeshComp, UAnimSe
 						SocketWorldLocation, 
 						SocketWorldLocation, 
 						TraceRadius,
-						UEngineTypes::ConvertToTraceType(ECC_Pawn),
+						UEngineTypes::ConvertToTraceType(Somnus_TraceChannel_Weapon),
 						false,
 						ActorsToIgnore,
 						EDrawDebugTrace::ForOneFrame,
@@ -64,6 +65,9 @@ void UANS_ZombieMeleeTrace::NotifyTick(USkeletalMeshComponent* MeshComp, UAnimSe
 							FGameplayEventData Payload;
 							Payload.Instigator = OwnerActor;
 							Payload.Target = TargetActor;
+							
+							Payload.TargetData = 
+								UAbilitySystemBlueprintLibrary::AbilityTargetDataFromHitResult(HitResult);
 							
 							UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(
 								OwnerActor, 

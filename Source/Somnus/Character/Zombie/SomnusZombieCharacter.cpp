@@ -8,6 +8,7 @@
 #include "NavigationSystemTypes.h"
 #include "AbilitySystem/Abilities/Zombie/SomnusGA_ZombieMeleeAttack.h"
 #include "AbilitySystem/Attributes/SomnusAttributeSet.h"
+#include "Character/SomnusHitReactComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Core/SomnusGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -22,6 +23,8 @@ ASomnusZombieCharacter::ASomnusZombieCharacter()
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
 	
 	AttributeSet = CreateDefaultSubobject<USomnusAttributeSet>("AttributeSet");
+
+	HitReact = CreateDefaultSubobject<USomnusHitReactComponent>("HitReact");
 }
 
 // Called when the game starts or when spawned
@@ -115,8 +118,12 @@ void ASomnusZombieCharacter::Die()
 }
 
 void ASomnusZombieCharacter::MulticastZombieDeath_Implementation()
-{  		
-	GetCharacterMovement()->SetMovementMode(MOVE_None); 
+{
+	// Release the mesh before the ragdoll claims it: an in-flight flinch would otherwise keep
+	// blending the corpse's upper body back toward the animation pose.
+	HitReact->StopHitReact();
+
+	GetCharacterMovement()->SetMovementMode(MOVE_None);
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetMesh()->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 	GetMesh()->SetCollisionProfileName(TEXT("Ragdoll"));

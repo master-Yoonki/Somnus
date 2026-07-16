@@ -46,6 +46,10 @@ protected:
 	
 	UPROPERTY()
 	TObjectPtr<USomnusAttributeSet> AttributeSet;
+
+	// Physics-based flinch on non-lethal hits
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HitReact")
+	TObjectPtr<class USomnusHitReactComponent> HitReact;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
 	TArray<TSubclassOf<class UGameplayEffect>> DefaultGameplayEffects;

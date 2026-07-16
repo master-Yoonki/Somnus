@@ -66,8 +66,14 @@ void USomnusGA_MeleeAttack::OnMeleeHit(FGameplayTag EventTag, FGameplayEventData
 	}
 
 	FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(DamageEffectClass);
+
 	if (SpecHandle.IsValid())
-	{
+	{	
+		if (EventData.TargetData.Num() > 0)
+		{
+			FHitResult HitResult = UAbilitySystemBlueprintLibrary::GetHitResultFromTargetData(EventData.TargetData, 0);
+			SpecHandle.Data->GetContext().AddHitResult(HitResult);
+		}
 		SpecHandle.Data->SetSetByCallerMagnitude(SomnusTags::Data_Damage, DamageAmount);
 		TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 	}

@@ -90,6 +90,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USomnusInventoryComponent> Inventory;
 
+	// Physics-based flinch on non-lethal hits
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HitReact", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class USomnusHitReactComponent> HitReact;
+
 public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "UI")
 	void InitHUD();
