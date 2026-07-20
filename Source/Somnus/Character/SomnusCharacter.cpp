@@ -20,6 +20,8 @@
 #include "Core/SomnusGameMode.h"
 #include "Inventory/SomnusInventoryComponent.h"
 #include "Character/SomnusHitReactComponent.h"
+#include "Equipment/SomnusMeleeWeapon.h"
+#include "PhysicsControlComponent.h"
 
 ASomnusCharacter::ASomnusCharacter()
 {
@@ -52,7 +54,11 @@ ASomnusCharacter::ASomnusCharacter()
 
 	HitReact = CreateDefaultSubobject<USomnusHitReactComponent>(TEXT("HitReact"));
 
+	PhysicsControl = CreateDefaultSubobject<UPhysicsControlComponent>(TEXT("PhysicsControl"));
+
 	CurrentGait = ESomnusGait::None;
+	
+	GetMesh()->PhysicsTransformUpdateMode = EPhysicsTransformUpdateMode::ComponentTransformIsKinematic;
 }
 
 void ASomnusCharacter::Tick(float DeltaTime)
@@ -151,6 +157,15 @@ void ASomnusCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ASomnusCharacter, WeaponInventory);
 	DOREPLIFETIME(ASomnusCharacter, EquippedWeapon);
+}
+
+TArray<FSomnusStrikeSourceInfo> ASomnusCharacter::GetStrikeSources() const
+{
+	if (ASomnusMeleeWeapon* MeleeWeapon = Cast<ASomnusMeleeWeapon>(EquippedWeapon))
+	{
+		return MeleeWeapon->GetStrikeSources();
+	}
+	return {};
 }
 
 void ASomnusCharacter::BeginPlay()
@@ -415,10 +430,6 @@ void ASomnusCharacter::Die(const FVector& HitDirection)
 
 void ASomnusCharacter::MulticastDeath_Implementation(const FVector& HitDirection)
 {
-	// Release the mesh before the ragdoll claims it: an in-flight flinch would otherwise keep
-	// blending the corpse's upper body back toward the animation pose.
-	HitReact->StopHitReact();
-
 	// Disable capsule collision and stop movement
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetCharacterMovement()->SetMovementMode(MOVE_None);

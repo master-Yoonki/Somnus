@@ -10,6 +10,7 @@
 #include "AbilitySystem/Attributes/SomnusAttributeSet.h"
 #include "Character/SomnusHitReactComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "PhysicsControlComponent.h"
 #include "Core/SomnusGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -25,6 +26,10 @@ ASomnusZombieCharacter::ASomnusZombieCharacter()
 	AttributeSet = CreateDefaultSubobject<USomnusAttributeSet>("AttributeSet");
 
 	HitReact = CreateDefaultSubobject<USomnusHitReactComponent>("HitReact");
+
+	PhysicsControl = CreateDefaultSubobject<UPhysicsControlComponent>("PhysicsControl");
+
+	GetMesh()->PhysicsTransformUpdateMode = EPhysicsTransformUpdateMode::ComponentTransformIsKinematic;
 }
 
 // Called when the game starts or when spawned
@@ -84,6 +89,27 @@ void ASomnusZombieCharacter::PossessedBy(AController* NewController)
 	}
 }
 
+TArray<FSomnusStrikeSourceInfo> ASomnusZombieCharacter::GetStrikeSources() const
+{
+	TArray<FSomnusStrikeSourceInfo> StrikeSources;
+	// TODO: Values are hard coded here, in the furutre, we need more complicated system and matching property filed for this
+	FSomnusStrikeSourceInfo LeftHandStrikeSource;
+	LeftHandStrikeSource.SocketNames.Add(FName("HandGrip_L"));
+	LeftHandStrikeSource.ReferenceMeshComponent = GetMesh();
+	LeftHandStrikeSource.Weight = 2.f;
+	LeftHandStrikeSource.TraceRadius = 10.f;
+	
+	FSomnusStrikeSourceInfo RightHandStrikeSource;
+	RightHandStrikeSource.SocketNames.Add(FName("HandGrip_R"));
+	RightHandStrikeSource.ReferenceMeshComponent = GetMesh();
+	RightHandStrikeSource.Weight = 2.f;
+	RightHandStrikeSource.TraceRadius = 10.f;
+	StrikeSources.Add(LeftHandStrikeSource);
+	StrikeSources.Add(RightHandStrikeSource);
+	
+	return StrikeSources;
+}
+
 void ASomnusZombieCharacter::OnHealthChanged(float CurrentValue, float MaxValue)
 {
 	if (GEngine)
@@ -119,10 +145,6 @@ void ASomnusZombieCharacter::Die()
 
 void ASomnusZombieCharacter::MulticastZombieDeath_Implementation()
 {
-	// Release the mesh before the ragdoll claims it: an in-flight flinch would otherwise keep
-	// blending the corpse's upper body back toward the animation pose.
-	HitReact->StopHitReact();
-
 	GetCharacterMovement()->SetMovementMode(MOVE_None);
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetMesh()->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);

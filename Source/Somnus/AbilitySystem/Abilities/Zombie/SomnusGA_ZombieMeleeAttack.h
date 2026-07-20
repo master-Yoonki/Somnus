@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "AbilitySystem/SomnusGameplayAbility.h"
+#include "AbilitySystem/Abilities/SomnusGA_MeleeAttack.h"
 #include "SomnusGA_ZombieMeleeAttack.generated.h"
 
 USTRUCT(BlueprintType)
@@ -13,11 +13,11 @@ struct FSomnusZombieAttackMontage
 
 	UPROPERTY(EditDefaultsOnly, Category = "Animation")
 	TObjectPtr<UAnimMontage> Montage;
-	
+
 	// Weight for random selection if multiple montages match, low number = higher priorty
 	UPROPERTY(EditDefaultsOnly, Category = "Selection")
 	int32 Priority = 0;
-	
+
 	// Angle relative to zombie's forward vector (-180 to 180)
 	UPROPERTY(EditDefaultsOnly, Category = "Conditions")
 	float MinAngle = -180.0f;
@@ -34,51 +34,23 @@ struct FSomnusZombieAttackMontage
 };
 
 UCLASS()
-class SOMNUS_API USomnusGA_ZombieMeleeAttack : public USomnusGameplayAbility
+class SOMNUS_API USomnusGA_ZombieMeleeAttack : public USomnusGA_MeleeAttack
 {
 	GENERATED_BODY()
 public:
 	USomnusGA_ZombieMeleeAttack();
-	
-	virtual void ActivateAbility(
-		const FGameplayAbilitySpecHandle Handle, 
-		const FGameplayAbilityActorInfo* ActorInfo, 
-		const FGameplayAbilityActivationInfo ActivationInfo, 
-		const FGameplayEventData* TriggerEventData) override;
-	
+
 	UFUNCTION(BlueprintCallable)
-	UAnimMontage* SelectAttackMontage(AActor* TargetActor);
+	UAnimMontage* SelectAttackMontage(const AActor* TargetActor);
+
 protected:
-	// The montage to play when attacking (set in the Blueprint subclass)
+	// Candidate montages; the one matching the target's angle/distance is picked at activation.
 	UPROPERTY(EditDefaultsOnly, Category = "Animation")
 	TArray<FSomnusZombieAttackMontage> AttackMontages;
-	
-	// Playback rate for the montage
-	UPROPERTY(EditDefaultsOnly, Category = "Animation")
-	float MontagePlayRate = 1.0f;
-	
-	//
-	// // TODO: Animation Controlled by montage for now, just simple delay to simulate
-	// UFUNCTION()
-	// void OnDelayFinished();
-	//
-	// Damage GE to apply on hit (should use SetByCaller with Data.Damage tag)
-	UPROPERTY(EditDefaultsOnly, Category = "Damage")
-	TSubclassOf<UGameplayEffect> DamageEffectClass;
-	
-	// Damage amount passed to the GE via SetByCaller
-	UPROPERTY(EditDefaultsOnly, Category = "Damage")
-	float DamageAmount = 20.0f;
-	
+
+	// Resolves the AI target, then selects a directional montage. Called by the base ActivateAbility.
+	virtual UAnimMontage* GetMontageToPlay(const FGameplayEventData* TriggerEventData) override;
+
 private:
-	static FSomnusZombieAttackMontage* PickByPriority(const TArray<FSomnusZombieAttackMontage*>& MontagesArray);
-	
-	UFUNCTION()
-	void OnMontageCompleted(FGameplayTag EventTag, FGameplayEventData EventData);
-
-	UFUNCTION()
-	void OnMontageCancelled(FGameplayTag EventTag, FGameplayEventData EventData);
-
-	UFUNCTION()
-	void OnMeleeHit(FGameplayTag EventTag, FGameplayEventData EventData);
+	static FSomnusZombieAttackMontage* PickByPriority(TArray<FSomnusZombieAttackMontage>* MontagesArray);
 };

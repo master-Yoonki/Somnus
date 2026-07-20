@@ -40,7 +40,17 @@ protected:
 	// Damage amount passed to the GE via SetByCaller
 	UPROPERTY(EditDefaultsOnly, Category = "Damage")
 	float DamageAmount = 20.0f;
+	
+	UPROPERTY(EditDefaultsOnly, Category = "Damage")
+	float ImpulseScale = 5.0f;
 
+	UPROPERTY()
+	TObjectPtr<class USomnusAT_TrackStrikeVelocity> StrikeTracker;
+	
+	virtual UAnimMontage* GetMontageToPlay(const FGameplayEventData* TriggerEventData)
+	{
+		return AttackMontage;
+	}
 private:
 	UFUNCTION()
 	void OnMontageCompleted(FGameplayTag EventTag, FGameplayEventData EventData);
@@ -50,4 +60,6 @@ private:
 
 	UFUNCTION()
 	void OnMeleeHit(FGameplayTag EventTag, FGameplayEventData EventData);
+	
+
 };

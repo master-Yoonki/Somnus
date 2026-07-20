@@ -24,7 +24,8 @@ public class Somnus : ModuleRules
 			"GameplayTasks",
 			"AnimGraphRuntime",
 			"AIModule",
-			"NavigationSystem"
+			"NavigationSystem",
+			"PhysicsControl"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

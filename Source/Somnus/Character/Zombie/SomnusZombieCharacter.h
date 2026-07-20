@@ -4,13 +4,14 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "Core/SomnusStrikeSource.h"
 #include "GameFramework/Character.h"
 #include "SomnusZombieCharacter.generated.h"
 
 class USomnusAttributeSet;
 
 UCLASS()
-class SOMNUS_API ASomnusZombieCharacter : public ACharacter, public IAbilitySystemInterface
+class SOMNUS_API ASomnusZombieCharacter : public ACharacter, public IAbilitySystemInterface, public ISomnusStrikeSource
 {
 	GENERATED_BODY()
 
@@ -39,6 +40,8 @@ public:
 	// Abilities granted at possession time (innate abilities like Jump)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
 	TArray<TSubclassOf<class UGameplayAbility>> DefaultAbilities;
+	
+	virtual TArray<FSomnusStrikeSourceInfo> GetStrikeSources() const override;
 protected:
 	// The core component that handles all GAS logic
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
@@ -50,6 +53,9 @@ protected:
 	// Physics-based flinch on non-lethal hits
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HitReact")
 	TObjectPtr<class USomnusHitReactComponent> HitReact;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HitReact")
+	TObjectPtr<class UPhysicsControlComponent> PhysicsControl;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
 	TArray<TSubclassOf<class UGameplayEffect>> DefaultGameplayEffects;

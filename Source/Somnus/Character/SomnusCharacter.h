@@ -7,6 +7,7 @@
 #include "AbilitySystemInterface.h"
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
+#include "Core/SomnusStrikeSource.h"
 #include "SomnusCharacter.generated.h"
 
 class ASomnusWeapon;
@@ -21,7 +22,7 @@ enum class ESomnusGait : uint8;
  * Acts as the physical avatar for the GAS component stored in the PlayerState.
  */
 UCLASS()
-class SOMNUS_API ASomnusCharacter : public ACharacter, public IAbilitySystemInterface
+class SOMNUS_API ASomnusCharacter : public ACharacter, public IAbilitySystemInterface, public ISomnusStrikeSource
 {
 	GENERATED_BODY()
 
@@ -39,6 +40,7 @@ public:
 	// Replicate this actor for multiplayer
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	virtual TArray<FSomnusStrikeSourceInfo> GetStrikeSources() const override;
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -93,6 +95,9 @@ protected:
 	// Physics-based flinch on non-lethal hits
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HitReact", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class USomnusHitReactComponent> HitReact;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HitReact", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class UPhysicsControlComponent> PhysicsControl;
 
 public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "UI")

@@ -2,6 +2,7 @@
 
 
 #include "AbilitySystem/Attributes/SomnusAttributeSet.h"
+
 #include "Character/SomnusCharacter.h"
 #include "Core/SomnusGameplayTags.h"
 #include "Net/UnrealNetwork.h"
@@ -9,8 +10,8 @@
 USomnusAttributeSet::USomnusAttributeSet()
 {
 	// Initialize default values (Can be overridden later by Gameplay Effects)
-	InitHealth(100.0f);
-	InitMaxHealth(100.0f);
+	InitHealth(500.0f);
+	InitMaxHealth(500.0f);
 	InitStamina(100.0f);
 	InitMaxStamina(100.0f);
 	InitStaminaRegenRate(1.0f);
@@ -88,6 +89,8 @@ void USomnusAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCall
 			{
 				// Only physical hits flinch — periodic/environmental damage carries no HitResult and shouldn't stagger
 				const FGameplayEffectContextHandle Context = Data.EffectSpec.GetEffectContext();
+
+				
 				if (Context.GetHitResult())
 				{
 					FGameplayEventData GameplayEventData;
@@ -177,4 +180,4 @@ void USomnusAttributeSet::AdjustAttributeForMaxChange(const FGameplayAttributeDa
 			: NewMaxValue;
 		ASC->ApplyModToAttribute(AffectedAttributeProperty, EGameplayModOp::Additive, NewDelta);
 	}
-}
+}		
