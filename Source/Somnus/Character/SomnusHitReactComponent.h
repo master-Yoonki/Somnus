@@ -69,9 +69,13 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	float RecoveryTime;
-	// Set by engine
-	UPROPERTY()
-	TMap<FName, FBoneHitReactProcessingData> BoneHitReactProcessingData;
+	// Multiple hits can land on the same bone before any of them finish recovering
+	// (e.g. two attacks landing on a bone within RecoveryTime of each other), so each
+	// bone tracks an array of independent in-flight hits rather than a single record.
+	// Not a UPROPERTY: UHT doesn't support a container-of-containers as a reflected
+	// member (TMap value can't itself be a TArray), and nothing here needs GC tracking
+	// (FBoneHitReactProcessingData holds no UObject pointers) or Blueprint exposure.
+	TMap<FName, TArray<FBoneHitReactProcessingData>> BoneHitReactProcessingData;
 	
 	UPROPERTY()
 	TObjectPtr<USkeletalMeshComponent> SkeletalMeshComponent;

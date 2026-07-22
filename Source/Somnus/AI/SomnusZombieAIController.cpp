@@ -7,6 +7,7 @@
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Character/SomnusCharacter.h"
+#include "Character/Zombie/SomnusZombieCharacter.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISenseConfig_Sight.h"
@@ -54,12 +55,20 @@ void ASomnusZombieAIController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 
+	if (const ASomnusZombieCharacter* ZombieCharacter = Cast<ASomnusZombieCharacter>(InPawn))
+	{
+		if (ZombieCharacter->ShouldDisableAI())
+		{
+			return;
+		}
+	}
+
 	if (BehaviorTree)
 	{
 		RunBehaviorTree(BehaviorTree);
 		SetState(EZombieState::Unaware);
 	}
-	
+
 }
 
 void ASomnusZombieAIController::ExecuteTransitionLogic(UBlackboardComponent* BlackboardComponent, EZombieState OldState, EZombieState NewState)

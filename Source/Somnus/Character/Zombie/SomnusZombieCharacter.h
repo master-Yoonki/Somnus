@@ -42,7 +42,15 @@ public:
 	TArray<TSubclassOf<class UGameplayAbility>> DefaultAbilities;
 	
 	virtual TArray<FSomnusStrikeSourceInfo> GetStrikeSources() const override;
+
+	// Testing utility: when set on a placed instance, the AI controller possesses
+	// as normal (GAS/abilities init via PossessedBy) but skips starting the
+	// behavior tree, so the zombie just stands still.
+	bool ShouldDisableAI() const { return bDisableAI; }
 protected:
+	UPROPERTY(EditInstanceOnly, Category = "AI|Testing")
+	bool bDisableAI = false;
+
 	// The core component that handles all GAS logic
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;

@@ -169,22 +169,37 @@ void USomnusHitReactComponent::TickComponent(float DeltaTime, enum ELevelTick Ti
                                              FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	
+
 	TArray<FName> HitReactBoneToDelete;
 	HitReactBoneToDelete.Reserve(BoneHitReactProcessingData.Num());
 
-	// Track the freshest active hit (smallest elapsed time); it drives the whole-body recovery.
+	// Track the freshest active hit (smallest elapsed time) across every bone and every
+	// in-flight record on that bone; it drives the whole-body recovery.
 	float MinProcessingTime = TNumericLimits<float>::Max();
 
 	for (auto& Data : BoneHitReactProcessingData)
 	{
-		FBoneHitReactProcessingData& HitReactProcessingData = Data.Value;
-		HitReactProcessingData.ProcessingTime += DeltaTime;
-		if (HitReactProcessingData.ProcessingTime > RecoveryTime)
+		TArray<FBoneHitReactProcessingData>& Records = Data.Value;
+		for (int32 Index = Records.Num() - 1; Index >= 0; --Index)
+		{
+			FBoneHitReactProcessingData& HitReactProcessingData = Records[Index];
+			HitReactProcessingData.ProcessingTime += DeltaTime;
+			if (HitReactProcessingData.ProcessingTime > RecoveryTime)
+			{
+				GetWorld()->GetTimerManager().ClearTimer(HitReactProcessingData.DelayTimer);
+				Records.RemoveAt(Index);
+			}
+			else
+			{
+				MinProcessingTime = FMath::Min(MinProcessingTime, HitReactProcessingData.ProcessingTime);
+			}
+		}
+
+		// Every in-flight hit on this bone has recovered - the bone itself is done.
+		if (Records.Num() == 0)
 		{
 			HitReactBoneToDelete.Add(Data.Key);
 		}
-		MinProcessingTime = FMath::Min(MinProcessingTime, HitReactProcessingData.ProcessingTime);
 	}
 
 	// Drive recovery once, from the freshest hit, across the global control sets.
@@ -208,23 +223,18 @@ void USomnusHitReactComponent::TickComponent(float DeltaTime, enum ELevelTick Ti
 	
 	for (const FName& BoneToDelete : HitReactBoneToDelete)
 	{
-		FBoneHitReactProcessingData HitReactProcessingData;
-		
+		// Only this bone's bodies revert to kinematic - other bones may still have
+		// hits in flight, and StopPhysicalAnimProcessing() (below) handles the
+		// whole-body revert once every bone has finished.
 		bool bIsRagdoll = false;
 		if (!bIsRagdoll)
 		{
-			// if not use ragdoll, 
-			// TODO: it disables all the bones, 
-			// PhysicsControlComponent->SetBodyModifiersInSetMovementType(FName("All"), EPhysicsMovementType::Kinematic);
 			PhysicsControlComponent->SetBodyModifiersMovementType({BoneToDelete}, EPhysicsMovementType::Kinematic);
-			SetAnimation(false);
 		}
-		
-		BoneHitReactProcessingData.RemoveAndCopyValue(BoneToDelete, HitReactProcessingData);
-		GetWorld()->GetTimerManager().ClearTimer(HitReactProcessingData.DelayTimer);
-		HitReactProcessingData.DelayTimer.Invalidate();
+
+		BoneHitReactProcessingData.Remove(BoneToDelete);
 	}
-	
+
 	IsAnyBoneProcessing = (BoneHitReactProcessingData.Num() != 0);
 	if (!IsAnyBoneProcessing)
 	{
@@ -287,18 +297,17 @@ void USomnusHitReactComponent::MulticastHitReaction_Implementation(FName BoneNam
 		SetComponentTickEnabled(true);
 	}
 	
-	bool bIsBoneProcessing = BoneHitReactProcessingData.Contains(BoneName);
-	if (!bIsBoneProcessing)
-	{
-		// Register the bone; capture the payload (bone + location + impulse) now, at bind time.
-		FBoneHitReactProcessingData& Data = BoneHitReactProcessingData.Add(BoneName);
+	// Every hit gets its own record and its own delay timer, independent of whatever
+	// else is already in flight on this bone - a fast re-hit must not cancel an
+	// earlier hit's still-pending delayed impulse.
+	TArray<FBoneHitReactProcessingData>& Records = BoneHitReactProcessingData.FindOrAdd(BoneName);
+	FBoneHitReactProcessingData& NewRecord = Records.AddDefaulted_GetRef();
 
-		FTimerDelegate DelayDelegate = FTimerDelegate::CreateUObject(
-			this, &USomnusHitReactComponent::ApplyDelayedImpulse, BoneName, Location, Impulse);
+	FTimerDelegate DelayDelegate = FTimerDelegate::CreateUObject(
+		this, &USomnusHitReactComponent::ApplyDelayedImpulse, BoneName, Location, Impulse);
 
-		GetWorld()->GetTimerManager().SetTimer(
-			Data.DelayTimer, DelayDelegate, ImpuseApplyDelay, /*bLoop=*/false);
-	}
+	GetWorld()->GetTimerManager().SetTimer(
+		NewRecord.DelayTimer, DelayDelegate, ImpuseApplyDelay, /*bLoop=*/false);
 
 	bool bIsRagdoll = false;
 	SetupPhysicsForHit(bIsRagdoll);
