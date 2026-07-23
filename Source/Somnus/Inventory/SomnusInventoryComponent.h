@@ -40,6 +40,9 @@ public:
 		return InventoryList.Items;                                               
 	}
 	
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Grid")
+	void InitializeGridSize(int32 NewX, int32 NewY);
+	
 	/** Checks if a coordinate is within the grid bounds */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Grid")
 	bool IsValidCell(int32 X, int32 Y) const;
@@ -51,7 +54,13 @@ public:
 	/** Finds the first available empty space for an item */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Grid")
 	bool FindFirstFit(class USomnusItemDataAsset* ItemData, int32& OutX, int32& OutY, bool& bOutRotated) const;
+	
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	int32 AddExistingItemAnywhere(FSomnusItemInstance& IncomingItemInstance);
 
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	int32 AddExistingItemAt(FSomnusItemInstance& IncomingItemInstance, int32 TopLeftX, int32 TopLeftY, bool bRotated);
+	
 	/** Attempts to add an item by finding the first available slot. 
 	 * Returns the leftover quantity that failed to add (0 if fully successful). Server-only. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
@@ -117,11 +126,11 @@ protected:
 	int32 GetGridHeight() const { return GridHeight; }
 	
 	/** Total columns in the grid */
-	UPROPERTY(EditDefaultsOnly, Category = "Inventory|Grid")
+	UPROPERTY(EditDefaultsOnly, Replicated, Category = "Inventory|Grid")
 	int32 GridWidth = 10;
 
 	/** Total rows in the grid */
-	UPROPERTY(EditDefaultsOnly, Category = "Inventory|Grid")
+	UPROPERTY(EditDefaultsOnly, Replicated, Category = "Inventory|Grid")
 	int32 GridHeight = 6;
 
 	/** The replicated list of items */

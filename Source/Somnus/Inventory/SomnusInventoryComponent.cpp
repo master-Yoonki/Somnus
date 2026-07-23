@@ -3,8 +3,10 @@
 #include "Inventory/SomnusInventoryComponent.h"
 
 #include "IDetailTreeNode.h"
+#include "SomnusContainerActor.h"
 #include "Net/UnrealNetwork.h"
 
+#include "Inventory/SomnusContainerDataAsset.h"
 #include "Inventory/SomnusItemDataAsset.h"
 
 DEFINE_LOG_CATEGORY(LogSomnusInventory);
@@ -24,10 +26,10 @@ void USomnusInventoryComponent::InitializeComponent()
 	// Initialize the occupancy grid with false (empty) bits
 	OccupationGrid.Init(false, GridWidth * GridHeight);
 
-	UE_LOG(LogSomnusInventory, Log, TEXT("Inventory Component Initialized on %s (Grid: %dx%d)"), *GetOwner()->GetName(), GridWidth, GridHeight);
+	// UE_LOG(LogSomnusInventory, Log, TEXT("Inventory Component Initialized on %s (Grid: %dx%d)"), *GetOwner()->GetName(), GridWidth, GridHeight);
 
 	// Zero Calibration: Print the empty grid to verify setup
-	PrintDebugGrid();
+	// PrintDebugGrid();
 }
 
 void USomnusInventoryComponent::BeginPlay()
@@ -49,6 +51,15 @@ void USomnusInventoryComponent::BeginPlay()
 			}
 		}
 	}
+}
+
+void USomnusInventoryComponent::InitializeGridSize(int32 NewX, int32 NewY)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority()) return;
+	if (NewX <= 0 || NewY <= 0) return;
+	GridWidth = NewX;
+	GridHeight = NewY;
 }
 
 bool USomnusInventoryComponent::IsValidCell(int32 X, int32 Y) const
@@ -148,6 +159,98 @@ bool USomnusInventoryComponent::FindFirstFit(USomnusItemDataAsset* ItemData, int
 	}
 	
 	return false;
+}
+
+int32 USomnusInventoryComponent::AddExistingItemAnywhere(FSomnusItemInstance& IncomingItemInstance)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority()) return IncomingItemInstance.StackCount;
+	for (FSomnusItemInstance& ItemInstance : InventoryList.Items)
+	{
+		if (ItemInstance.ItemData->ItemId == IncomingItemInstance.ItemData->ItemId)
+		{
+			if (IncomingItemInstance.StackCount <= 0)
+			{
+				return 0;
+			}
+			const int32 AvailableSpace = 
+				ItemInstance.ItemData->MaxStackCount - ItemInstance.StackCount; 
+			
+			const int32 QuantityToAdd = FMath::Min(IncomingItemInstance.StackCount, AvailableSpace);
+			
+			ItemInstance.StackCount += QuantityToAdd;
+			InventoryList.MarkItemDirty(ItemInstance);
+			RebuildOccupationGrid();
+			OnItemChanged(ItemInstance);
+			IncomingItemInstance.StackCount -= QuantityToAdd;
+		}
+	}
+	
+	// Leftover item stack count must have valid Stackcount < MaxStackCount
+	// Because first params guaranteed existing in world
+	int32 GridX = 0;
+	int32 GridY = 0;
+	bool bIsRotated = false;
+	if (FindFirstFit(IncomingItemInstance.ItemData, GridX, GridY, bIsRotated))
+	{
+		int32 LeftOver = AddExistingItemAt(
+			IncomingItemInstance, 
+			GridX, GridY, bIsRotated);
+		
+		ensureMsgf(LeftOver == 0, 
+			TEXT("AddItemAt failed to place the full remainder after FindFirstFit succeeded — CanFitAt/FindFirstFit inconsistency?"));
+		
+		return /*0*/ IncomingItemInstance.StackCount;
+	}
+	return IncomingItemInstance.StackCount;
+}
+
+int32 USomnusInventoryComponent::AddExistingItemAt(FSomnusItemInstance& IncomingItemInstance, int32 TopLeftX, int32 TopLeftY,
+                                                   bool bRotated)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority()) return IncomingItemInstance.StackCount;
+	if (IncomingItemInstance.StackCount <= 0) return IncomingItemInstance.StackCount;
+	if (FSomnusItemInstance* ExistingItemInstance = GetItemAt(TopLeftX, TopLeftY))
+	{
+		if (ExistingItemInstance->ItemData->ItemId != IncomingItemInstance.ItemData->ItemId)
+		{
+			return IncomingItemInstance.StackCount;
+		}
+		const int32 AvailableSpace = 
+			ExistingItemInstance->ItemData->MaxStackCount - ExistingItemInstance->StackCount; 
+			
+		const int32 QuantityToAdd = FMath::Min(IncomingItemInstance.StackCount, AvailableSpace);
+			
+		ExistingItemInstance->StackCount += QuantityToAdd;
+		IncomingItemInstance.StackCount -= QuantityToAdd;
+		InventoryList.MarkItemDirty(*ExistingItemInstance);	
+		RebuildOccupationGrid();
+		OnItemChanged(*ExistingItemInstance);
+		return IncomingItemInstance.StackCount;
+	}
+	else
+	{
+		if (CanFitAt(IncomingItemInstance.ItemData, TopLeftX, TopLeftY, bRotated))
+		{
+			FSomnusItemInstance& NewInstance = InventoryList.Items.AddDefaulted_GetRef();
+			NewInstance.ItemData = IncomingItemInstance.ItemData;
+			NewInstance.StackCount = IncomingItemInstance.StackCount;
+			NewInstance.GridPosition = FIntPoint(TopLeftX, TopLeftY);
+			NewInstance.bRotated = bRotated;
+			NewInstance.InstanceID = IncomingItemInstance.InstanceID;
+			NewInstance.CurrentDurability = IncomingItemInstance.CurrentDurability;
+			NewInstance.ContainerActor = IncomingItemInstance.ContainerActor;
+	
+			InventoryList.MarkItemDirty(NewInstance);
+			RebuildOccupationGrid();
+			OnItemAdded(NewInstance);
+			
+			IncomingItemInstance.StackCount = 0;
+			return 0;
+		}
+		return IncomingItemInstance.StackCount;
+	}
 }
 
 int32 USomnusInventoryComponent::AddItemAnywhere(USomnusItemDataAsset* ItemData, int32 Quantity)
@@ -365,6 +468,15 @@ void USomnusInventoryComponent::Internal_AddItem(USomnusItemDataAsset* ItemData,
 	NewInstance.GridPosition = FIntPoint(TopLeftX, TopLeftY);
 	NewInstance.bRotated = bRotated;
 	NewInstance.InstanceID = FGuid::NewGuid();
+
+	if (USomnusContainerDataAsset* ContainerDataAsset 
+		= Cast<USomnusContainerDataAsset>(ItemData))
+	{
+		ASomnusContainerActor* ContainerActor = GetWorld()->SpawnActor<ASomnusContainerActor>();
+		ContainerActor->Initialize(ContainerDataAsset);
+		NewInstance.ContainerActor = ContainerActor;
+	}
+	
 	InventoryList.MarkItemDirty(NewInstance);
 	RebuildOccupationGrid();
 	OnItemAdded(NewInstance);
@@ -491,4 +603,6 @@ void USomnusInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(USomnusInventoryComponent, InventoryList);
+	DOREPLIFETIME(USomnusInventoryComponent, GridWidth);
+	DOREPLIFETIME(USomnusInventoryComponent, GridHeight);
 }

@@ -26,13 +26,16 @@ struct FSomnusItemInstance : public FFastArraySerializerItem
 	int32 StackCount = 1;
 	UPROPERTY(BlueprintReadOnly, Category = "Item")
 	int32 CurrentDurability = -1;
-	UPROPERTY(BlueprintReadOnly, Category = "Item")
+	UPROPERTY(BlueprintReadOnly, Category = "Item|Grid")
 	FIntPoint GridPosition = FIntPoint(-1, -1);
-	UPROPERTY(BlueprintReadOnly, Category = "Item")
+	UPROPERTY(BlueprintReadOnly, Category = "Item|Grid")
 	bool bRotated = false;
 	// server-generated; primary key for moves/removes 
-	UPROPERTY(BlueprintReadOnly, Category = "Item")
+	UPROPERTY(BlueprintReadOnly, Category = "Item|Grid")
 	FGuid InstanceID;
+	
+	UPROPERTY(BlueprintReadOnly)
+	TObjectPtr<class ASomnusContainerActor> ContainerActor = nullptr;
 };
 
 /**
