@@ -462,24 +462,22 @@ void USomnusInventoryComponent::Server_TryMoveItem_Implementation(FGuid Instance
 
 void USomnusInventoryComponent::Internal_AddItem(USomnusItemDataAsset* ItemData, int32 Quantity, int32 TopLeftX, int32 TopLeftY, bool bRotated)
 {
-	FSomnusItemInstance& NewInstance = InventoryList.Items.AddDefaulted_GetRef();
-	NewInstance.ItemData = ItemData;
-	NewInstance.StackCount = Quantity;
+	// Minting the instance (ID, container actor) lives on the struct itself; this function
+	// only decides where it goes in the grid.
+	FSomnusItemInstance NewInstance = FSomnusItemInstance::MakeItemInstance(GetWorld(), ItemData, Quantity);
+	if (!NewInstance.ItemData)
+	{
+		return;
+	}
+
 	NewInstance.GridPosition = FIntPoint(TopLeftX, TopLeftY);
 	NewInstance.bRotated = bRotated;
-	NewInstance.InstanceID = FGuid::NewGuid();
 
-	if (USomnusContainerDataAsset* ContainerDataAsset 
-		= Cast<USomnusContainerDataAsset>(ItemData))
-	{
-		ASomnusContainerActor* ContainerActor = GetWorld()->SpawnActor<ASomnusContainerActor>();
-		ContainerActor->Initialize(ContainerDataAsset);
-		NewInstance.ContainerActor = ContainerActor;
-	}
-	
-	InventoryList.MarkItemDirty(NewInstance);
+	FSomnusItemInstance& AddedInstance = InventoryList.Items.Add_GetRef(NewInstance);
+
+	InventoryList.MarkItemDirty(AddedInstance);
 	RebuildOccupationGrid();
-	OnItemAdded(NewInstance);
+	OnItemAdded(AddedInstance);
 	// PrintDebugGrid();
 }
 

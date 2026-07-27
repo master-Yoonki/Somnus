@@ -31,16 +31,18 @@ public:
 		return Result;
 	}
 	
-	UFUNCTION()
-	void SetWorldPresence(bool bInWorld, AActor* AnchorActor = nullptr);
-	
 	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
-	
-	bool bIsInWorld;
-	
+
 	UPROPERTY(BlueprintReadOnly, Replicated)
 	TArray<TObjectPtr<USomnusInventoryComponent>> Compartments;
+
+public:
+	// [DEBUG SPIKE] Plain replicated int bumped by SomnusFillContainer. If this value
+	// reaches the client but the compartment contents do not, the actor is delivering
+	// deltas fine and the problem is subobject-specific. Delete once verified.
+	UPROPERTY(Replicated)
+	int32 Debug_RepCounter = 0;
 };

@@ -89,7 +89,10 @@ protected:
 	// Grid-based inventory component
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USomnusInventoryComponent> Inventory;
-
+	
+	// Grid-based inventory component
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "EquipmentComponent", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class USomnusContainerEquipComponent> ContainerEquipmentComponent;
 public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "UI")
 	void InitHUD();
@@ -137,6 +140,32 @@ public:
 
 	UFUNCTION()
 	ESomnusGait GetCurrentGait() const { return CurrentGait; }
+
+	// ===== [DEBUG SPIKE] Dynamic component replication verification. Delete once verified. =====
+
+	// Console: dumps this machine's view of every container item in the pockets,
+	// its ASomnusContainerActor, and each compartment's grid + contents.
+	UFUNCTION(Exec)
+	void SomnusDumpContainers();
+
+	// Console (server window only): drops one filler item into compartment 0 of the
+	// first container item found in the pockets, so contents replication can be observed.
+	UFUNCTION(Exec)
+	void SomnusFillContainer();
+
+	// Console (server window only): control test — adds a filler item to the character's
+	// own pocket inventory, which is a default subobject on an actor that already
+	// replicates reliably. Isolates "runtime delta" from "container actor".
+	UFUNCTION(Exec)
+	void SomnusFillPockets();
+
+	// Console (server window only): tries to add one filler item to every grid returned by
+	// GetActiveContainers(), logging the result per slot. Exercises pockets, rig and
+	// backpack in one go.
+	UFUNCTION(Exec)
+	void SomnusFillActive();
+
+	// ===== [/DEBUG SPIKE] =====
 
 protected:
 	// GEs applied to the ASC at possession (e.g., stamina regen, passive buffs)

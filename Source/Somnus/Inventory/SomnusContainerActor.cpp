@@ -14,7 +14,6 @@ ASomnusContainerActor::ASomnusContainerActor()
 	PrimaryActorTick.bCanEverTick = false;
 	SetReplicates(true);
 	bAlwaysRelevant = true;
-	bIsInWorld = false;
 }
 
 void ASomnusContainerActor::Initialize(USomnusContainerDataAsset* ContainerDataAsset)
@@ -23,7 +22,6 @@ void ASomnusContainerActor::Initialize(USomnusContainerDataAsset* ContainerDataA
 	{
 		return;
 	}
-	
 	
 	const int32 NumCompartments = ContainerDataAsset->CompartmentSizes.Num();
 	Compartments.SetNum(NumCompartments);
@@ -40,29 +38,11 @@ void ASomnusContainerActor::Initialize(USomnusContainerDataAsset* ContainerDataA
 	}
 }
 
-void ASomnusContainerActor::SetWorldPresence(bool bInWorld, AActor* AnchorActor)
-{
-	if (bInWorld == bIsInWorld) return;
-	if (bInWorld)
-	{
-		if (!AnchorActor) return;
-		bAlwaysRelevant = false;
-		AttachToActor(
-			AnchorActor,
-			FAttachmentTransformRules::KeepRelativeTransform);
-	}
-	else
-	{
-		DetachFromActor(FDetachmentTransformRules::KeepRelativeTransform);
-		bAlwaysRelevant = true;
-	}
-	bIsInWorld = bInWorld;
-}
-
 void ASomnusContainerActor::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ASomnusContainerActor, Compartments);
+	DOREPLIFETIME(ASomnusContainerActor, Debug_RepCounter); // [DEBUG SPIKE]
 }
 
 // Called when the game starts or when spawned

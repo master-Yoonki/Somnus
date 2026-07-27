@@ -16,6 +16,12 @@ struct FSomnusItemInstance : public FFastArraySerializerItem
 {
 	GENERATED_BODY()
 
+	/** Mints a fully-formed instance: a new InstanceID, plus a spawned and initialized
+	 *  container actor when Data is a container. Placement (GridPosition, bRotated) and
+	 *  stack limits are the caller's concern. Returns an instance with a null ItemData
+	 *  on failure. Server only. */
+	static FSomnusItemInstance MakeItemInstance(UWorld* World, class USomnusItemDataAsset* Data, int32 Quantity = 1);
+	
 	void PreReplicatedRemove(const struct FSomnusInventoryList& InArraySerializer);
 	void PostReplicatedAdd(const struct FSomnusInventoryList& InArraySerializer);
 	void PostReplicatedChange(const struct FSomnusInventoryList& InArraySerializer);

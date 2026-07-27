@@ -45,7 +45,7 @@ struct FSomnusActiveContainerInfo
 	UPROPERTY(BlueprintReadOnly)
 	EContainerSlotType SlotType = EContainerSlotType::Pockets;
 	
-	// Only needed if multi - compartment container
+	// if multi - compartment container
 	UPROPERTY(BlueprintReadOnly)
 	int32 SlotIndex = INDEX_NONE;
 	
