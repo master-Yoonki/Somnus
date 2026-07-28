@@ -55,6 +55,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Grid")
 	bool FindFirstFit(class USomnusItemDataAsset* ItemData, int32& OutX, int32& OutY, bool& bOutRotated) const;
 	
+	/** Tops up stacks of this item that already exist here, without ever opening a new cell.
+	 *  Returns the quantity that found no room. Split out from AddItemAnywhere so a caller
+	 *  spanning several containers can merge across all of them before any of them starts
+	 *  consuming free space. Server-only. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	int32 MergeItemIntoStacks(class USomnusItemDataAsset* ItemData, int32 Quantity);
+
+	/** Existing-instance counterpart of MergeItemIntoStacks. Consumes from the incoming
+	 *  instance in place and returns what is left of it. Server-only. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	int32 MergeExistingItemIntoStacks(FSomnusItemInstance& IncomingItemInstance);
+
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
 	int32 AddExistingItemAnywhere(FSomnusItemInstance& IncomingItemInstance);
 
@@ -78,6 +90,13 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
 	bool TryMoveItem(FGuid InstanceID, int32 NewTopLeftX, int32 NewTopLeftY, bool bNewRotated);
 
+	/** Pulls an item out of another grid and drops it into this one at a specific cell,
+	 *  preserving its identity and contents. Handles partial stack merges by leaving the
+	 *  remainder behind. Passing this component as Source is allowed and routes to
+	 *  TryMoveItem. Returns true when anything moved at all. Server-only. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
+	bool MoveItemFrom(USomnusInventoryComponent* Source, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated);
+
 	/** Server RPC for adding an item anywhere. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
 	void Server_AddItemAnywhere(class USomnusItemDataAsset* ItemData, int32 Quantity = 1);
@@ -93,6 +112,11 @@ public:
 	/** Server RPC for moving an item. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
 	void Server_TryMoveItem(FGuid InstanceID, int32 NewTopLeftX, int32 NewTopLeftY, bool bNewRotated);
+
+	/** Server RPC for a drag that crossed grids. Call it on the grid that was dropped on;
+	 *  Source is the grid the drag started in. Safe to call when they are the same. */
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
+	void Server_MoveItemFrom(USomnusInventoryComponent* Source, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated);
 
 	/** Internal logic to add an item after validation. */
 	void Internal_AddItem(class USomnusItemDataAsset* ItemData, int32 Quantity, int32 TopLeftX, int32 TopLeftY, bool bRotated);
@@ -118,6 +142,9 @@ protected:
 
 	/** Helper to find an item instance by its unique ID */
 	const FSomnusItemInstance* FindItemInstance(FGuid ID) const;
+
+	/** Writable counterpart, for the paths that adjust an item in place. */
+	FSomnusItemInstance* FindItemInstanceMutable(FGuid ID);
 	
 	UFUNCTION(BlueprintPure, Category = "Inventory|Size")
 	int32 GetGridWidth() const { return GridWidth; };

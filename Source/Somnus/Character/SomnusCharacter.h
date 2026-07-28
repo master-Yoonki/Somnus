@@ -86,11 +86,7 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
     class UCameraComponent* FollowCamera;
 
-	// Grid-based inventory component
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<USomnusInventoryComponent> Inventory;
-	
-	// Grid-based inventory component
+	// Owns every grid this character can reach: pockets, plus any worn rig and backpack.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "EquipmentComponent", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class USomnusContainerEquipComponent> ContainerEquipmentComponent;
 public:
@@ -126,9 +122,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
 	ASomnusWeapon* GetEquippedWeapon() const { return EquippedWeapon; }
 
-	UFUNCTION(BlueprintCallable, Category = "Inventory")
-	USomnusInventoryComponent* GetInventory() const { return Inventory; }
-
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	TArray<struct FSomnusActiveContainerInfo> GetActiveContainers() const;
+	
 	// Switch weapon slot: 0 = unarmed, 1+ = weapon index in WeaponClasses.
 	// Safe to call from client — routes to ServerSwitchWeapon.
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
@@ -148,22 +144,24 @@ public:
 	UFUNCTION(Exec)
 	void SomnusDumpContainers();
 
-	// Console (server window only): drops one filler item into compartment 0 of the
-	// first container item found in the pockets, so contents replication can be observed.
-	UFUNCTION(Exec)
-	void SomnusFillContainer();
-
-	// Console (server window only): control test — adds a filler item to the character's
-	// own pocket inventory, which is a default subobject on an actor that already
-	// replicates reliably. Isolates "runtime delta" from "container actor".
-	UFUNCTION(Exec)
-	void SomnusFillPockets();
-
 	// Console (server window only): tries to add one filler item to every grid returned by
 	// GetActiveContainers(), logging the result per slot. Exercises pockets, rig and
 	// backpack in one go.
 	UFUNCTION(Exec)
 	void SomnusFillActive();
+
+	// Console (server window only): puts Quantity filler items straight into one grid,
+	// addressed by its flat index in GetActiveContainers() (the #n that SomnusDumpContainers
+	// prints). Bypasses the aggregator on purpose - this is for building a starting state,
+	// such as a half-filled stack in the backpack only.
+	UFUNCTION(Exec)
+	void SomnusSeed(int32 ContainerIndex, int32 Quantity);
+
+	// Console (server window only): routes Quantity filler items through
+	// USomnusContainerEquipComponent::TryAddItemAnywhere, then dumps the result. This is the
+	// one that exercises merge-across-all-containers before placement.
+	UFUNCTION(Exec)
+	void SomnusGive(int32 Quantity);
 
 	// ===== [/DEBUG SPIKE] =====
 

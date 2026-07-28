@@ -21,6 +21,7 @@
 #include "Inventory/SomnusInventoryComponent.h"
 #include "Inventory/SomnusContainerActor.h"
 #include "Inventory/SomnusContainerDataAsset.h"
+#include "Inventory/SomnusItemTypes.h"
 #include "Inventory/SomnusItemDataAsset.h"
 #include "Inventory/SomnusContainerEquipComponent.h"
 #include "EngineUtils.h"
@@ -51,9 +52,6 @@ ASomnusCharacter::ASomnusCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm
 
-	// Create the inventory component
-	Inventory = CreateDefaultSubobject<USomnusInventoryComponent>(TEXT("Inventory"));
-	
 	ContainerEquipmentComponent = CreateDefaultSubobject<USomnusContainerEquipComponent>(TEXT("ContainerEquip"));
 
 	CurrentGait = ESomnusGait::None;
@@ -186,6 +184,16 @@ void ASomnusCharacter::BeginPlay()
 			}
 		}
 	}
+}
+
+TArray<FSomnusActiveContainerInfo> ASomnusCharacter::GetActiveContainers() const
+{
+	if (ContainerEquipmentComponent)
+	{
+		return ContainerEquipmentComponent->GetActiveContainers();	
+	}
+	
+	return {};
 }
 
 void ASomnusCharacter::SwitchWeapon(int32 SlotIndex)
@@ -537,13 +545,18 @@ static void SomnusDebug_DumpGridContents(USomnusInventoryComponent* Grid, const 
 	{
 		const FString ItemName = Item.ItemData ? Item.ItemData->GetName() : TEXT("<null ItemData>");
 
+		const FString InstanceLabel = Item.InstanceID.ToString(EGuidFormats::DigitsWithHyphens).Left(8);
+
 		if (!Cast<USomnusContainerDataAsset>(Item.ItemData))
 		{
-			UE_LOG(LogSomnusInventory, Warning, TEXT("%s%s x%d"), Indent, *ItemName, Item.StackCount);
+			// Plain items carry their id and cell too, so stacks split off the same incoming
+			// instance can be told apart - two entries sharing an id is the bug to watch for.
+			UE_LOG(LogSomnusInventory, Warning, TEXT("%s%s x%d  [id %s]  at (%d,%d)%s"),
+				Indent, *ItemName, Item.StackCount, *InstanceLabel,
+				Item.GridPosition.X, Item.GridPosition.Y,
+				Item.bRotated ? TEXT("  rotated") : TEXT(""));
 			continue;
 		}
-
-		const FString InstanceLabel = Item.InstanceID.ToString(EGuidFormats::DigitsWithHyphens).Left(8);
 
 		if (!Item.ContainerActor)
 		{
@@ -560,6 +573,36 @@ static void SomnusDebug_DumpGridContents(USomnusInventoryComponent* Grid, const 
 	}
 }
 
+// Picks a filler out of whatever the character is already carrying, so no extra asset setup is
+// needed. Prefers a stackable one — a stack test against MaxStackCount 1 proves nothing.
+static USomnusItemDataAsset* SomnusDebug_FindFiller(ASomnusCharacter* Character)
+{
+	USomnusItemDataAsset* Fallback = nullptr;
+	for (const FSomnusActiveContainerInfo& Info : Character->GetActiveContainers())
+	{
+		if (!Info.Container)
+		{
+			continue;
+		}
+		for (const FSomnusItemInstance& Item : Info.Container->GetAllItems())
+		{
+			if (!Item.ItemData || Cast<USomnusContainerDataAsset>(Item.ItemData))
+			{
+				continue;
+			}
+			if (Item.ItemData->MaxStackCount > 1)
+			{
+				return Item.ItemData;
+			}
+			if (!Fallback)
+			{
+				Fallback = Item.ItemData;
+			}
+		}
+	}
+	return Fallback;
+}
+
 static void SomnusDebug_DumpCharacter(ASomnusCharacter* Character)
 {
 	const APlayerState* PS = Character->GetPlayerState();
@@ -568,14 +611,6 @@ static void SomnusDebug_DumpCharacter(ASomnusCharacter* Character)
 		*Character->GetName(), *SomnusDebug_RoleLabel(Character),
 		PS ? PS->GetPlayerId() : -1,
 		Character->IsLocallyControlled() ? 1 : 0);
-
-	// Legacy default-subobject inventory — still where DefaultItems are configured.
-	if (USomnusInventoryComponent* Legacy = Character->GetInventory())
-	{
-		UE_LOG(LogSomnusInventory, Warning, TEXT("     [legacy Inventory]  Items=%d"),
-			Legacy->GetAllItems().Num());
-		SomnusDebug_DumpGridContents(Legacy, TEXT("         "));
-	}
 
 	const USomnusContainerEquipComponent* Equip =
 		Character->FindComponentByClass<USomnusContainerEquipComponent>();
@@ -588,8 +623,9 @@ static void SomnusDebug_DumpCharacter(ASomnusCharacter* Character)
 	const TArray<FSomnusActiveContainerInfo> Active = Equip->GetActiveContainers();
 	UE_LOG(LogSomnusInventory, Warning, TEXT("     GetActiveContainers() -> %d"), Active.Num());
 
-	for (const FSomnusActiveContainerInfo& Info : Active)
+	for (int32 FlatIndex = 0; FlatIndex < Active.Num(); ++FlatIndex)
 	{
+		const FSomnusActiveContainerInfo& Info = Active[FlatIndex];
 		USomnusInventoryComponent* Grid = Info.Container;
 		if (!Grid)
 		{
@@ -598,8 +634,11 @@ static void SomnusDebug_DumpCharacter(ASomnusCharacter* Character)
 			continue;
 		}
 
+		// The leading number is the flat index into GetActiveContainers(), which is what
+		// SomnusSeed takes to target one grid.
 		UE_LOG(LogSomnusInventory, Warning,
-			TEXT("     [%s %d]  %s  Registered=%d  Initialized=%d  Items=%d"),
+			TEXT("     #%d  [%s %d]  %s  Registered=%d  Initialized=%d  Items=%d"),
+			FlatIndex,
 			*SomnusDebug_SlotLabel(Info.SlotType), Info.SlotIndex, *Grid->GetName(),
 			Grid->IsRegistered() ? 1 : 0,
 			Grid->HasBeenInitialized() ? 1 : 0,
@@ -630,109 +669,6 @@ void ASomnusCharacter::SomnusDumpContainers()
 	UE_LOG(LogSomnusInventory, Warning, TEXT("===== [%s] end ====="), *Machine);
 }
 
-void ASomnusCharacter::SomnusFillContainer()
-{
-	if (!HasAuthority())
-	{
-		UE_LOG(LogSomnusInventory, Warning,
-			TEXT("SomnusFillContainer: this is a client. Run it in the server window instead."));
-		return;
-	}
-
-	USomnusInventoryComponent* Pockets = GetInventory();
-	if (!Pockets)
-	{
-		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusFillContainer: Inventory component is NULL"));
-		return;
-	}
-
-	const TArray<FSomnusItemInstance> Items = Pockets->GetAllItems();
-
-	// Reuse whatever plain item is already in the pockets as the payload,
-	// so the spike needs no extra asset setup.
-	USomnusItemDataAsset* Filler = nullptr;
-	for (const FSomnusItemInstance& Item : Items)
-	{
-		if (Item.ItemData && !Cast<USomnusContainerDataAsset>(Item.ItemData))
-		{
-			Filler = Item.ItemData;
-			break;
-		}
-	}
-
-	if (!Filler)
-	{
-		UE_LOG(LogSomnusInventory, Error,
-			TEXT("SomnusFillContainer: no plain item in the pockets to use as filler"));
-		return;
-	}
-
-	for (const FSomnusItemInstance& Item : Items)
-	{
-		if (!Item.ContainerActor)
-		{
-			continue;
-		}
-
-		const TArray<USomnusInventoryComponent*> Compartments = Item.ContainerActor->GetCompartments();
-		if (Compartments.Num() == 0 || !Compartments[0])
-		{
-			continue;
-		}
-
-		const int32 Leftover = Compartments[0]->AddItemAnywhere(Filler, 1);
-		++Item.ContainerActor->Debug_RepCounter;
-		UE_LOG(LogSomnusInventory, Warning,
-			TEXT("SomnusFillContainer: character=%s, container item id=%s, added %s to compartment 0 (leftover=%d, RepCounter=%d)"),
-			*GetName(),
-			*Item.InstanceID.ToString(EGuidFormats::DigitsWithHyphens).Left(8),
-			*Filler->GetName(), Leftover, Item.ContainerActor->Debug_RepCounter);
-		return;
-	}
-
-	UE_LOG(LogSomnusInventory, Error, TEXT("SomnusFillContainer: no container item found in the pockets"));
-}
-
-void ASomnusCharacter::SomnusFillPockets()
-{
-	if (!HasAuthority())
-	{
-		UE_LOG(LogSomnusInventory, Warning,
-			TEXT("SomnusFillPockets: this is a client. Run it in the server window instead."));
-		return;
-	}
-
-	USomnusInventoryComponent* Pockets = GetInventory();
-	if (!Pockets)
-	{
-		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusFillPockets: Inventory component is NULL"));
-		return;
-	}
-
-	const TArray<FSomnusItemInstance> Items = Pockets->GetAllItems();
-
-	USomnusItemDataAsset* Filler = nullptr;
-	for (const FSomnusItemInstance& Item : Items)
-	{
-		if (Item.ItemData && !Cast<USomnusContainerDataAsset>(Item.ItemData))
-		{
-			Filler = Item.ItemData;
-			break;
-		}
-	}
-
-	if (!Filler)
-	{
-		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusFillPockets: no plain item to use as filler"));
-		return;
-	}
-
-	const int32 Leftover = Pockets->AddItemAnywhere(Filler, 1);
-	UE_LOG(LogSomnusInventory, Warning,
-		TEXT("SomnusFillPockets: character=%s, added %s (leftover=%d, pocket items now %d)"),
-		*GetName(), *Filler->GetName(), Leftover, Pockets->GetAllItems().Num());
-}
-
 void ASomnusCharacter::SomnusFillActive()
 {
 	if (!HasAuthority())
@@ -749,20 +685,7 @@ void ASomnusCharacter::SomnusFillActive()
 		return;
 	}
 
-	// Reuse whatever plain item the legacy inventory already holds, so no extra asset setup.
-	USomnusItemDataAsset* Filler = nullptr;
-	if (USomnusInventoryComponent* Legacy = GetInventory())
-	{
-		for (const FSomnusItemInstance& Item : Legacy->GetAllItems())
-		{
-			if (Item.ItemData && !Cast<USomnusContainerDataAsset>(Item.ItemData))
-			{
-				Filler = Item.ItemData;
-				break;
-			}
-		}
-	}
-
+	USomnusItemDataAsset* Filler = SomnusDebug_FindFiller(this);
 	if (!Filler)
 	{
 		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusFillActive: no plain item to use as filler"));
@@ -787,6 +710,89 @@ void ASomnusCharacter::SomnusFillActive()
 			Leftover, Info.Container->GetAllItems().Num(),
 			Leftover > 0 ? TEXT("   <-- did not fit") : TEXT(""));
 	}
+}
+
+void ASomnusCharacter::SomnusSeed(int32 ContainerIndex, int32 Quantity)
+{
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSomnusInventory, Warning,
+			TEXT("SomnusSeed: this is a client. Run it in the server window instead."));
+		return;
+	}
+
+	USomnusContainerEquipComponent* Equip = FindComponentByClass<USomnusContainerEquipComponent>();
+	if (!Equip)
+	{
+		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusSeed: no equip component on %s"), *GetName());
+		return;
+	}
+
+	const TArray<FSomnusActiveContainerInfo> Active = Equip->GetActiveContainers();
+	if (!Active.IsValidIndex(ContainerIndex))
+	{
+		UE_LOG(LogSomnusInventory, Error,
+			TEXT("SomnusSeed: index %d is out of range - GetActiveContainers() has %d entries. Run SomnusDumpContainers for the list."),
+			ContainerIndex, Active.Num());
+		return;
+	}
+
+	USomnusItemDataAsset* Filler = SomnusDebug_FindFiller(this);
+	if (!Filler)
+	{
+		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusSeed: no plain item to use as filler"));
+		return;
+	}
+
+	const int32 Amount = FMath::Max(1, Quantity);
+	const FSomnusActiveContainerInfo& Info = Active[ContainerIndex];
+
+	// Straight into one grid, deliberately bypassing the aggregator - this builds the starting
+	// state (a half-filled stack somewhere specific) that SomnusGive is then measured against.
+	const int32 Leftover = Info.Container->AddItemAnywhere(Filler, Amount);
+
+	UE_LOG(LogSomnusInventory, Warning,
+		TEXT("SomnusSeed: #%d [%s %d] <- %s x%d (MaxStack=%d), leftover=%d"),
+		ContainerIndex, *SomnusDebug_SlotLabel(Info.SlotType), Info.SlotIndex,
+		*Filler->GetName(), Amount, Filler->MaxStackCount, Leftover);
+
+	SomnusDebug_DumpGridContents(Info.Container, TEXT("     "));
+}
+
+void ASomnusCharacter::SomnusGive(int32 Quantity)
+{
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSomnusInventory, Warning,
+			TEXT("SomnusGive: this is a client. Run it in the server window instead."));
+		return;
+	}
+
+	USomnusContainerEquipComponent* Equip = FindComponentByClass<USomnusContainerEquipComponent>();
+	if (!Equip)
+	{
+		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusGive: no equip component on %s"), *GetName());
+		return;
+	}
+
+	USomnusItemDataAsset* Filler = SomnusDebug_FindFiller(this);
+	if (!Filler)
+	{
+		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusGive: no plain item to use as filler"));
+		return;
+	}
+
+	const int32 Amount = FMath::Max(1, Quantity);
+
+	// Unlike SomnusFillActive, this goes through the aggregator, so it exercises the merge
+	// pass, the placement pass and the priority order in one call - the thing under test.
+	const int32 Leftover = Equip->TryAddItemAnywhere(Filler, Amount);
+
+	UE_LOG(LogSomnusInventory, Warning,
+		TEXT("SomnusGive: character=%s, filler=%s (MaxStack=%d), asked=%d, leftover=%d"),
+		*GetName(), *Filler->GetName(), Filler->MaxStackCount, Amount, Leftover);
+
+	SomnusDebug_DumpCharacter(this);
 }
 
 // ===== [/DEBUG SPIKE] =====

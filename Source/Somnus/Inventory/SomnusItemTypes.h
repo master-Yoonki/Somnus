@@ -6,6 +6,7 @@
 #include "SomnusItemTypes.generated.h"
 
 class USomnusInventoryComponent;
+class USomnusItemDataAsset;
 
 UENUM(BlueprintType)
 enum class EItemCategory : uint8
@@ -51,4 +52,10 @@ struct FSomnusActiveContainerInfo
 	
 	UPROPERTY(BlueprintReadOnly)
 	TObjectPtr<USomnusInventoryComponent> Container = nullptr;
+
+	/** The item this storage came from, for UI that needs to name or picture it. Every
+	 *  compartment of one container reports the same asset. Never null for a well-formed
+	 *  entry - pockets report their PocketData, worn slots report the equipped item. */
+	UPROPERTY(BlueprintReadOnly)
+	TObjectPtr<USomnusItemDataAsset> SourceItemData = nullptr;
 };

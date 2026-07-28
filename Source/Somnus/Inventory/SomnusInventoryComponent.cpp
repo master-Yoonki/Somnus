@@ -161,46 +161,59 @@ bool USomnusInventoryComponent::FindFirstFit(USomnusItemDataAsset* ItemData, int
 	return false;
 }
 
+int32 USomnusInventoryComponent::MergeExistingItemIntoStacks(FSomnusItemInstance& IncomingItemInstance)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority()) return IncomingItemInstance.StackCount;
+	if (!IncomingItemInstance.ItemData || IncomingItemInstance.StackCount <= 0) return IncomingItemInstance.StackCount;
+
+	for (FSomnusItemInstance& ItemInstance : InventoryList.Items)
+	{
+		if (IncomingItemInstance.StackCount <= 0) break;
+		if (!ItemInstance.ItemData || ItemInstance.ItemData->ItemId != IncomingItemInstance.ItemData->ItemId) continue;
+
+		const int32 AvailableSpace = ItemInstance.ItemData->MaxStackCount - ItemInstance.StackCount;
+		const int32 QuantityToMerge = FMath::Min(IncomingItemInstance.StackCount, AvailableSpace);
+		if (QuantityToMerge <= 0) continue;
+
+		ItemInstance.StackCount += QuantityToMerge;
+		IncomingItemInstance.StackCount -= QuantityToMerge;
+		// No RebuildOccupationGrid - a merge changes stack counts, never the footprint.
+		InventoryList.MarkItemDirty(ItemInstance);
+		OnItemChanged(ItemInstance);
+	}
+	return IncomingItemInstance.StackCount;
+}
+
 int32 USomnusInventoryComponent::AddExistingItemAnywhere(FSomnusItemInstance& IncomingItemInstance)
 {
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor || !OwnerActor->HasAuthority()) return IncomingItemInstance.StackCount;
-	for (FSomnusItemInstance& ItemInstance : InventoryList.Items)
-	{
-		if (ItemInstance.ItemData->ItemId == IncomingItemInstance.ItemData->ItemId)
-		{
-			if (IncomingItemInstance.StackCount <= 0)
-			{
-				return 0;
-			}
-			const int32 AvailableSpace = 
-				ItemInstance.ItemData->MaxStackCount - ItemInstance.StackCount; 
-			
-			const int32 QuantityToAdd = FMath::Min(IncomingItemInstance.StackCount, AvailableSpace);
-			
-			ItemInstance.StackCount += QuantityToAdd;
-			InventoryList.MarkItemDirty(ItemInstance);
-			RebuildOccupationGrid();
-			OnItemChanged(ItemInstance);
-			IncomingItemInstance.StackCount -= QuantityToAdd;
-		}
-	}
-	
-	// Leftover item stack count must have valid Stackcount < MaxStackCount
-	// Because first params guaranteed existing in world
+	if (!IncomingItemInstance.ItemData) return IncomingItemInstance.StackCount;
+
+	MergeExistingItemIntoStacks(IncomingItemInstance);
+
+	// What is left needs its own cells. One stack per pass, because AddExistingItemAt caps
+	// each placement at MaxStackCount and hands the remainder back.
 	int32 GridX = 0;
 	int32 GridY = 0;
 	bool bIsRotated = false;
-	if (FindFirstFit(IncomingItemInstance.ItemData, GridX, GridY, bIsRotated))
+	while (IncomingItemInstance.StackCount > 0)
 	{
-		int32 LeftOver = AddExistingItemAt(
-			IncomingItemInstance, 
-			GridX, GridY, bIsRotated);
-		
-		ensureMsgf(LeftOver == 0, 
-			TEXT("AddItemAt failed to place the full remainder after FindFirstFit succeeded — CanFitAt/FindFirstFit inconsistency?"));
-		
-		return /*0*/ IncomingItemInstance.StackCount;
+		if (!FindFirstFit(IncomingItemInstance.ItemData, GridX, GridY, bIsRotated)) break;
+
+		const int32 QuantityBefore = IncomingItemInstance.StackCount;
+		AddExistingItemAt(IncomingItemInstance, GridX, GridY, bIsRotated);
+
+		// The invariant is progress, not a zero remainder - a split legitimately leaves one.
+		// Bailing on no progress also keeps a CanFitAt/FindFirstFit disagreement from
+		// spinning this loop forever.
+		if (!ensureMsgf(IncomingItemInstance.StackCount < QuantityBefore,
+			TEXT("FindFirstFit reported free space at (%d, %d) but AddExistingItemAt placed nothing - CanFitAt/FindFirstFit disagree."),
+			GridX, GridY))
+		{
+			break;
+		}
 	}
 	return IncomingItemInstance.StackCount;
 }
@@ -233,24 +246,60 @@ int32 USomnusInventoryComponent::AddExistingItemAt(FSomnusItemInstance& Incoming
 	{
 		if (CanFitAt(IncomingItemInstance.ItemData, TopLeftX, TopLeftY, bRotated))
 		{
+			const int32 QuantityToPlace = FMath::Min(IncomingItemInstance.StackCount, IncomingItemInstance.ItemData->MaxStackCount);
+			// A stack too large for one cell leaves a remainder behind, so this placement is
+			// only a spin-off. The incoming identity - GUID, durability, and the container
+			// actor holding its contents - stays with the remainder and lands on the final
+			// stack; the spin-offs mint their own, the same way Internal_AddItem does on the
+			// new-item path. Two grid entries sharing one GUID would make the second one
+			// invisible to RemoveItem/TryMoveItem, which resolve by first match.
+			const bool bIsSpinOff = QuantityToPlace < IncomingItemInstance.StackCount;
+
 			FSomnusItemInstance& NewInstance = InventoryList.Items.AddDefaulted_GetRef();
 			NewInstance.ItemData = IncomingItemInstance.ItemData;
-			NewInstance.StackCount = IncomingItemInstance.StackCount;
+			NewInstance.StackCount = QuantityToPlace;
 			NewInstance.GridPosition = FIntPoint(TopLeftX, TopLeftY);
 			NewInstance.bRotated = bRotated;
-			NewInstance.InstanceID = IncomingItemInstance.InstanceID;
+			NewInstance.InstanceID = bIsSpinOff ? FGuid::NewGuid() : IncomingItemInstance.InstanceID;
 			NewInstance.CurrentDurability = IncomingItemInstance.CurrentDurability;
-			NewInstance.ContainerActor = IncomingItemInstance.ContainerActor;
-	
+			// Only ever non-null on the final stack. Container items are MaxStackCount == 1
+			// by construction, so they never take the spin-off branch - but duplicating the
+			// pointer if one ever did would give two grid entries the same storage.
+			NewInstance.ContainerActor = bIsSpinOff ? nullptr : IncomingItemInstance.ContainerActor;
+
+			IncomingItemInstance.StackCount -= QuantityToPlace;
+
 			InventoryList.MarkItemDirty(NewInstance);
 			RebuildOccupationGrid();
 			OnItemAdded(NewInstance);
-			
-			IncomingItemInstance.StackCount = 0;
-			return 0;
+
+			return IncomingItemInstance.StackCount;
 		}
 		return IncomingItemInstance.StackCount;
 	}
+}
+
+int32 USomnusInventoryComponent::MergeItemIntoStacks(USomnusItemDataAsset* ItemData, int32 Quantity)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!ItemData || !OwnerActor || !OwnerActor->HasAuthority()) return Quantity;
+	if (Quantity <= 0) return Quantity;
+
+	for (FSomnusItemInstance& Item : InventoryList.Items)
+	{
+		if (Quantity <= 0) break;
+		if (!Item.ItemData || Item.ItemData->ItemId != ItemData->ItemId) continue;
+
+		const int32 AvailableSpace = Item.ItemData->MaxStackCount - Item.StackCount;
+		const int32 QuantityToMerge = FMath::Min(Quantity, AvailableSpace);
+		if (QuantityToMerge <= 0) continue;
+
+		Item.StackCount += QuantityToMerge;
+		Quantity -= QuantityToMerge;
+		InventoryList.MarkItemDirty(Item);
+		OnItemChanged(Item);
+	}
+	return Quantity;
 }
 
 int32 USomnusInventoryComponent::AddItemAnywhere(USomnusItemDataAsset* ItemData, int32 Quantity)
@@ -258,27 +307,9 @@ int32 USomnusInventoryComponent::AddItemAnywhere(USomnusItemDataAsset* ItemData,
 	AActor* OwnerActor = GetOwner();
 	if (!ItemData || !OwnerActor || !OwnerActor->HasAuthority()) return Quantity;
 	if (Quantity <= 0) return Quantity;
-	
-	int32 QuantityToAdd = Quantity;
-	
-	for (FSomnusItemInstance& Item : InventoryList.Items)
-	{
-		if (Item.ItemData->ItemId == ItemData->ItemId)
-		{
-			const int32 AvailableSpace = Item.ItemData->MaxStackCount - Item.StackCount;
-			const int32 QuantityToMerge = FMath::Min(QuantityToAdd, AvailableSpace);
-			
-			if (QuantityToMerge > 0)
-			{
-				Item.StackCount += QuantityToMerge;
-				InventoryList.MarkItemDirty(Item);
-				OnItemChanged(Item);
-				QuantityToAdd -= QuantityToMerge;
-			}
-		}
-		if (QuantityToAdd <= 0) return 0;
-	}
-	
+
+	int32 QuantityToAdd = MergeItemIntoStacks(ItemData, Quantity);
+
 	int32 AddItemLocationX = 0, AddItemLocationY = 0;
 	bool bRotated = false;
 	while (QuantityToAdd > 0)
@@ -459,6 +490,133 @@ void USomnusInventoryComponent::Server_TryMoveItem_Implementation(FGuid Instance
 	TryMoveItem(InstanceID, NewTopLeftX, NewTopLeftY, bNewRotated);
 }
 
+/** True when Grid is one of MovingContainer's own compartments, or sits somewhere inside a
+ *  container nested within it. Descends through the contents rather than walking up an owner
+ *  chain, because a container held as an item in a grid has no owner to walk. */
+static bool SomnusInventory_IsInsideContainer(const USomnusInventoryComponent* Grid, const ASomnusContainerActor* MovingContainer)
+{
+	if (!Grid || !MovingContainer)
+	{
+		return false;
+	}
+
+	for (USomnusInventoryComponent* Compartment : MovingContainer->GetCompartments())
+	{
+		if (!Compartment)
+		{
+			continue;
+		}
+		if (Compartment == Grid)
+		{
+			return true;
+		}
+		for (const FSomnusItemInstance& Item : Compartment->GetAllItems())
+		{
+			if (Item.ContainerActor && SomnusInventory_IsInsideContainer(Grid, Item.ContainerActor))
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+/** Resolves the actor a piece of storage ultimately belongs to, so a moved container can
+ *  inherit it. Compartments live on container actors, which are themselves owned by whoever
+ *  holds them, so this collapses that chain down to the character (or pickup actor) at its
+ *  root. Stops at the first link with no owner, which is still the right answer - that link
+ *  becomes the owner and the chain repairs itself when it gets one. */
+static AActor* SomnusInventory_ResolveRootHolder(AActor* Actor)
+{
+	while (ASomnusContainerActor* AsContainer = Cast<ASomnusContainerActor>(Actor))
+	{
+		AActor* NextOwner = AsContainer->GetOwner();
+		if (!NextOwner)
+		{
+			break;
+		}
+		Actor = NextOwner;
+	}
+	return Actor;
+}
+
+bool USomnusInventoryComponent::MoveItemFrom(USomnusInventoryComponent* Source, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority() || !Source)
+	{
+		return false;
+	}
+
+	// Same grid: the item still occupies its old cells, so a plain placement would collide
+	// with its own body. TryMoveItem is the path that knows to ignore it via CanFitAt's
+	// IgnoreItemID. Decided here rather than in the widget, so a client that gets it wrong
+	// still cannot corrupt anything.
+	if (Source == this)
+	{
+		return TryMoveItem(InstanceID, TopLeftX, TopLeftY, bRotated);
+	}
+
+	// Copy the instance out rather than holding a pointer into Source's array: the add below
+	// fires OnItemAdded, and a listener is free to touch either inventory.
+	FSomnusItemInstance Moving;
+	{
+		const FSomnusItemInstance* SourceItem = Source->FindItemInstance(InstanceID);
+		if (!SourceItem || !SourceItem->ItemData)
+		{
+			// The client asked to move something that is not there. Its view will be corrected
+			// by the next replication of Source, so there is nothing to undo here.
+			return false;
+		}
+		Moving = *SourceItem;
+	}
+
+	if (Moving.ContainerActor && SomnusInventory_IsInsideContainer(this, Moving.ContainerActor))
+	{
+		UE_LOG(LogSomnusInventory, Warning,
+			TEXT("MoveItemFrom: refusing to put %s inside its own storage - it and everything in it would be unreachable."),
+			*Moving.ItemData->GetName());
+		return false;
+	}
+
+	// Add first, remove second. The other order destroys the item whenever the placement is
+	// rejected - same rule EquipInstance follows.
+	const int32 QuantityBefore = Moving.StackCount;
+	const int32 Leftover = AddExistingItemAt(Moving, TopLeftX, TopLeftY, bRotated);
+
+	if (Leftover >= QuantityBefore)
+	{
+		return false;   // nothing was accepted, so the source keeps everything
+	}
+
+	if (Leftover <= 0)
+	{
+		Source->RemoveItem(InstanceID);
+	}
+	else if (FSomnusItemInstance* Remainder = Source->FindItemInstanceMutable(InstanceID))
+	{
+		// A partial stack merge: the destination took what it had room for and the rest stays
+		// where it was.
+		Remainder->StackCount = Leftover;
+		Source->InventoryList.MarkItemDirty(*Remainder);
+		Source->OnItemChanged(*Remainder);
+	}
+
+	// Storage follows its holder so client RPCs keep routing and relevancy keeps resolving.
+	// Source and destination sit on the same character today; they stop doing so as soon as
+	// corpses and world containers are lootable.
+	if (Moving.ContainerActor)
+	{
+		Moving.ContainerActor->SetOwner(SomnusInventory_ResolveRootHolder(OwnerActor));
+	}
+	return true;
+}
+
+void USomnusInventoryComponent::Server_MoveItemFrom_Implementation(USomnusInventoryComponent* Source, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated)
+{
+	MoveItemFrom(Source, InstanceID, TopLeftX, TopLeftY, bRotated);
+}
+
 
 void USomnusInventoryComponent::Internal_AddItem(USomnusItemDataAsset* ItemData, int32 Quantity, int32 TopLeftX, int32 TopLeftY, bool bRotated)
 {
@@ -566,6 +724,18 @@ FSomnusItemInstance* USomnusInventoryComponent::GetItemAt(int32 X, int32 Y)
 const FSomnusItemInstance* USomnusInventoryComponent::FindItemInstance(FGuid ID) const
 {
 	for (const FSomnusItemInstance& Item : InventoryList.Items)
+	{
+		if (Item.InstanceID == ID)
+		{
+			return &Item;
+		}
+	}
+	return nullptr;
+}
+
+FSomnusItemInstance* USomnusInventoryComponent::FindItemInstanceMutable(FGuid ID)
+{
+	for (FSomnusItemInstance& Item : InventoryList.Items)
 	{
 		if (Item.InstanceID == ID)
 		{
