@@ -305,7 +305,7 @@ void ASomnusCharacter::Server_Interact_Implementation()
 	const bool bTraceResult = UKismetSystemLibrary::SphereTraceSingle(
 		GetWorld(), TraceStart, TraceEnd, TraceRadius,
 		UEngineTypes::ConvertToTraceType(SomnusCollision::Interaction),
-		false, ActorsToIgnore, EDrawDebugTrace::ForDuration,
+		false, ActorsToIgnore, EDrawDebugTrace::None,
 		Hit, true);
 
 	if (!bTraceResult)
@@ -539,7 +539,9 @@ void ASomnusCharacter::BindAttributeCallbacks()
 	UpdateStaminaUI(AS->GetStamina(), AS->GetMaxStamina());
 }
 
-// ===== [DEBUG SPIKE] Dynamic component replication verification. Delete once verified. =====
+// Container inventory diagnostics. Every label below is chosen so the same dump taken on two
+// machines can be compared line by line - which is the only practical way to tell a replication
+// fault apart from a display fault in this system.
 
 static FString SomnusDebug_MachineLabel(const AActor* Actor)
 {
@@ -630,36 +632,6 @@ static void SomnusDebug_DumpGridContents(USomnusInventoryComponent* Grid, const 
 	}
 }
 
-// Picks a filler out of whatever the character is already carrying, so no extra asset setup is
-// needed. Prefers a stackable one — a stack test against MaxStackCount 1 proves nothing.
-static USomnusItemDataAsset* SomnusDebug_FindFiller(ASomnusCharacter* Character)
-{
-	USomnusItemDataAsset* Fallback = nullptr;
-	for (const FSomnusActiveContainerInfo& Info : Character->GetActiveContainers())
-	{
-		if (!Info.Container)
-		{
-			continue;
-		}
-		for (const FSomnusItemInstance& Item : Info.Container->GetAllItems())
-		{
-			if (!Item.ItemData || Cast<USomnusContainerDataAsset>(Item.ItemData))
-			{
-				continue;
-			}
-			if (Item.ItemData->MaxStackCount > 1)
-			{
-				return Item.ItemData;
-			}
-			if (!Fallback)
-			{
-				Fallback = Item.ItemData;
-			}
-		}
-	}
-	return Fallback;
-}
-
 static void SomnusDebug_DumpCharacter(ASomnusCharacter* Character)
 {
 	const APlayerState* PS = Character->GetPlayerState();
@@ -691,8 +663,8 @@ static void SomnusDebug_DumpCharacter(ASomnusCharacter* Character)
 			continue;
 		}
 
-		// The leading number is the flat index into GetActiveContainers(), which is what
-		// SomnusSeed takes to target one grid.
+		// The leading number is the flat index into GetActiveContainers(), so a grid seen here
+		// can be named unambiguously when talking about a specific one.
 		UE_LOG(LogSomnusInventory, Warning,
 			TEXT("     #%d  [%s %d]  %s  Registered=%d  Initialized=%d  Items=%d"),
 			FlatIndex,
@@ -726,130 +698,3 @@ void ASomnusCharacter::SomnusDumpContainers()
 	UE_LOG(LogSomnusInventory, Warning, TEXT("===== [%s] end ====="), *Machine);
 }
 
-void ASomnusCharacter::SomnusFillActive()
-{
-	if (!HasAuthority())
-	{
-		UE_LOG(LogSomnusInventory, Warning,
-			TEXT("SomnusFillActive: this is a client. Run it in the server window instead."));
-		return;
-	}
-
-	USomnusContainerEquipComponent* Equip = FindComponentByClass<USomnusContainerEquipComponent>();
-	if (!Equip)
-	{
-		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusFillActive: no equip component on %s"), *GetName());
-		return;
-	}
-
-	USomnusItemDataAsset* Filler = SomnusDebug_FindFiller(this);
-	if (!Filler)
-	{
-		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusFillActive: no plain item to use as filler"));
-		return;
-	}
-
-	const TArray<FSomnusActiveContainerInfo> Active = Equip->GetActiveContainers();
-	UE_LOG(LogSomnusInventory, Warning, TEXT("SomnusFillActive: character=%s, filler=%s, containers=%d"),
-		*GetName(), *Filler->GetName(), Active.Num());
-
-	for (const FSomnusActiveContainerInfo& Info : Active)
-	{
-		if (!Info.Container)
-		{
-			continue;
-		}
-
-		const int32 Leftover = Info.Container->AddItemAnywhere(Filler, 1);
-		UE_LOG(LogSomnusInventory, Warning,
-			TEXT("   [%s %d]  leftover=%d  items=%d%s"),
-			*SomnusDebug_SlotLabel(Info.SlotType), Info.SlotIndex,
-			Leftover, Info.Container->GetAllItems().Num(),
-			Leftover > 0 ? TEXT("   <-- did not fit") : TEXT(""));
-	}
-}
-
-void ASomnusCharacter::SomnusSeed(int32 ContainerIndex, int32 Quantity)
-{
-	if (!HasAuthority())
-	{
-		UE_LOG(LogSomnusInventory, Warning,
-			TEXT("SomnusSeed: this is a client. Run it in the server window instead."));
-		return;
-	}
-
-	USomnusContainerEquipComponent* Equip = FindComponentByClass<USomnusContainerEquipComponent>();
-	if (!Equip)
-	{
-		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusSeed: no equip component on %s"), *GetName());
-		return;
-	}
-
-	const TArray<FSomnusActiveContainerInfo> Active = Equip->GetActiveContainers();
-	if (!Active.IsValidIndex(ContainerIndex))
-	{
-		UE_LOG(LogSomnusInventory, Error,
-			TEXT("SomnusSeed: index %d is out of range - GetActiveContainers() has %d entries. Run SomnusDumpContainers for the list."),
-			ContainerIndex, Active.Num());
-		return;
-	}
-
-	USomnusItemDataAsset* Filler = SomnusDebug_FindFiller(this);
-	if (!Filler)
-	{
-		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusSeed: no plain item to use as filler"));
-		return;
-	}
-
-	const int32 Amount = FMath::Max(1, Quantity);
-	const FSomnusActiveContainerInfo& Info = Active[ContainerIndex];
-
-	// Straight into one grid, deliberately bypassing the aggregator - this builds the starting
-	// state (a half-filled stack somewhere specific) that SomnusGive is then measured against.
-	const int32 Leftover = Info.Container->AddItemAnywhere(Filler, Amount);
-
-	UE_LOG(LogSomnusInventory, Warning,
-		TEXT("SomnusSeed: #%d [%s %d] <- %s x%d (MaxStack=%d), leftover=%d"),
-		ContainerIndex, *SomnusDebug_SlotLabel(Info.SlotType), Info.SlotIndex,
-		*Filler->GetName(), Amount, Filler->MaxStackCount, Leftover);
-
-	SomnusDebug_DumpGridContents(Info.Container, TEXT("     "));
-}
-
-void ASomnusCharacter::SomnusGive(int32 Quantity)
-{
-	if (!HasAuthority())
-	{
-		UE_LOG(LogSomnusInventory, Warning,
-			TEXT("SomnusGive: this is a client. Run it in the server window instead."));
-		return;
-	}
-
-	USomnusContainerEquipComponent* Equip = FindComponentByClass<USomnusContainerEquipComponent>();
-	if (!Equip)
-	{
-		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusGive: no equip component on %s"), *GetName());
-		return;
-	}
-
-	USomnusItemDataAsset* Filler = SomnusDebug_FindFiller(this);
-	if (!Filler)
-	{
-		UE_LOG(LogSomnusInventory, Error, TEXT("SomnusGive: no plain item to use as filler"));
-		return;
-	}
-
-	const int32 Amount = FMath::Max(1, Quantity);
-
-	// Unlike SomnusFillActive, this goes through the aggregator, so it exercises the merge
-	// pass, the placement pass and the priority order in one call - the thing under test.
-	const int32 Leftover = Equip->TryAddItemAnywhere(Filler, Amount);
-
-	UE_LOG(LogSomnusInventory, Warning,
-		TEXT("SomnusGive: character=%s, filler=%s (MaxStack=%d), asked=%d, leftover=%d"),
-		*GetName(), *Filler->GetName(), Filler->MaxStackCount, Amount, Leftover);
-
-	SomnusDebug_DumpCharacter(this);
-}
-
-// ===== [/DEBUG SPIKE] =====

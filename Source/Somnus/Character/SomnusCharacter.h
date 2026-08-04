@@ -142,33 +142,13 @@ public:
 	UFUNCTION()
 	ESomnusGait GetCurrentGait() const { return CurrentGait; }
 
-	// ===== [DEBUG SPIKE] Dynamic component replication verification. Delete once verified. =====
-
-	// Console: dumps this machine's view of every container item in the pockets,
-	// its ASomnusContainerActor, and each compartment's grid + contents.
+	// Console: dumps this machine's view of every character's containers - each compartment's
+	// grid, its contents, and the ASomnusContainerActor behind any container item, recursing
+	// into nested ones. Run it in both windows and diff: items carry their replicated
+	// InstanceID, so the same item is identifiable on either side even though actor and
+	// component names are not.
 	UFUNCTION(Exec)
 	void SomnusDumpContainers();
-
-	// Console (server window only): tries to add one filler item to every grid returned by
-	// GetActiveContainers(), logging the result per slot. Exercises pockets, rig and
-	// backpack in one go.
-	UFUNCTION(Exec)
-	void SomnusFillActive();
-
-	// Console (server window only): puts Quantity filler items straight into one grid,
-	// addressed by its flat index in GetActiveContainers() (the #n that SomnusDumpContainers
-	// prints). Bypasses the aggregator on purpose - this is for building a starting state,
-	// such as a half-filled stack in the backpack only.
-	UFUNCTION(Exec)
-	void SomnusSeed(int32 ContainerIndex, int32 Quantity);
-
-	// Console (server window only): routes Quantity filler items through
-	// USomnusContainerEquipComponent::TryAddItemAnywhere, then dumps the result. This is the
-	// one that exercises merge-across-all-containers before placement.
-	UFUNCTION(Exec)
-	void SomnusGive(int32 Quantity);
-
-	// ===== [/DEBUG SPIKE] =====
 
 protected:
 	// GEs applied to the ASC at possession (e.g., stamina regen, passive buffs)

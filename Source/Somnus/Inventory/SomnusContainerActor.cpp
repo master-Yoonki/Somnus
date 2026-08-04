@@ -42,7 +42,6 @@ void ASomnusContainerActor::GetLifetimeReplicatedProps(TArray<class FLifetimePro
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ASomnusContainerActor, Compartments);
-	DOREPLIFETIME(ASomnusContainerActor, Debug_RepCounter); // [DEBUG SPIKE]
 }
 
 // Called when the game starts or when spawned
