@@ -62,6 +62,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Abilities", meta = (AllowPrivateAccess = "true"))
 	FGameplayTagContainer HoldInputTags;
 
+	void Interact(const FInputActionValue& Value);
+
+	UFUNCTION(Server, Reliable)
+	void Server_Interact();
+	
 	// Native input callbacks
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);

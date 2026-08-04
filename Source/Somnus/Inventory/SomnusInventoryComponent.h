@@ -7,6 +7,8 @@
 #include "Inventory/SomnusItemInstance.h"
 #include "SomnusInventoryComponent.generated.h"
 
+class ASomnusContainerActor;
+
 DECLARE_LOG_CATEGORY_EXTERN(LogSomnusInventory, Log, All);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnInventoryItemChanged, const FSomnusItemInstance&, Item);
 
@@ -40,6 +42,23 @@ public:
 		return InventoryList.Items;                                               
 	}
 	
+	/** Copies out the item carrying this ID. Returns false and leaves OutItem alone when this
+	 *  grid does not hold it.
+	 *  A copy rather than a pointer, deliberately: this is the door other classes come in
+	 *  through, and InventoryList.Items reallocates on every add and remove - including the
+	 *  ones a delegate listener sets off - so a pointer held across any of those calls is
+	 *  already suspect. Callers reaching in from outside want a snapshot regardless, since
+	 *  they all add before they remove, which needs the old values to outlive the add. */
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	bool FindItemByID(FGuid InstanceID, FSomnusItemInstance& OutItem) const;
+
+	/** True when Grid is one of MovingContainer's own compartments, or sits somewhere inside
+	 *  a container nested within it. This is the same self-containment rule AddExistingItemAt/
+	 *  AddExistingItemAnywhere refuse on their own - exposed here read-only so UI can preview
+	 *  the refusal (e.g. hover feedback while dragging) before ever calling either of them. */
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	static bool IsInsideContainer(const USomnusInventoryComponent* Grid, const ASomnusContainerActor* MovingContainer);
+
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Grid")
 	void InitializeGridSize(int32 NewX, int32 NewY);
 	
@@ -118,6 +137,11 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
 	void Server_MoveItemFrom(USomnusInventoryComponent* Source, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated);
 
+	/** Helper to find an item instance by its unique ID. Public, unlike its mutable counterpart:
+	 *  handing out a read-only view costs nothing, while writing through the other one without
+	 *  going on to mark the list dirty leaves every listener looking at the previous state. */
+	const FSomnusItemInstance* FindItemInstance(FGuid ID) const;
+
 	/** Internal logic to add an item after validation. */
 	void Internal_AddItem(class USomnusItemDataAsset* ItemData, int32 Quantity, int32 TopLeftX, int32 TopLeftY, bool bRotated);
 
@@ -140,10 +164,7 @@ protected:
 	/** Helper to find an item instance that covers a specific grid cell */
 	FSomnusItemInstance* GetItemAt(int32 X, int32 Y);
 
-	/** Helper to find an item instance by its unique ID */
-	const FSomnusItemInstance* FindItemInstance(FGuid ID) const;
-
-	/** Writable counterpart, for the paths that adjust an item in place. */
+	/** Writable counterpart of FindItemInstance, for the paths that adjust an item in place. */
 	FSomnusItemInstance* FindItemInstanceMutable(FGuid ID);
 	
 	UFUNCTION(BlueprintPure, Category = "Inventory|Size")

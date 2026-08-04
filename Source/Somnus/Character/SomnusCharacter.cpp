@@ -25,6 +25,9 @@
 #include "Inventory/SomnusItemDataAsset.h"
 #include "Inventory/SomnusContainerEquipComponent.h"
 #include "EngineUtils.h"
+#include "Core/SomnusInteractable.h"
+#include "Core/SomnusCollisionChannels.h"
+#include "Kismet/KismetSystemLibrary.h"
 
 ASomnusCharacter::ASomnusCharacter()
 {
@@ -276,8 +279,49 @@ void ASomnusCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerIn
 	// Native actions
 	SomnusIC->BindNativeAction(InputConfig, SomnusTags::Input_Native_Move, ETriggerEvent::Triggered, this, &ASomnusCharacter::Move);
 	SomnusIC->BindNativeAction(InputConfig, SomnusTags::Input_Native_Look, ETriggerEvent::Triggered, this, &ASomnusCharacter::Look);
+	SomnusIC->BindNativeAction(InputConfig, SomnusTags::Input_Native_Interact, ETriggerEvent::Started, this, &ASomnusCharacter::Interact);
+	
 	// Ability actions (Jump is routed here too — see GA_Jump for InputReleased handling)
 	SomnusIC->BindAbilityActions(InputConfig, this, &ASomnusCharacter::AbilityInputTagPressed, &ASomnusCharacter::AbilityInputTagReleased);
+}
+
+void ASomnusCharacter::Interact(const FInputActionValue& Value)
+{
+	Server_Interact();
+}
+
+void ASomnusCharacter::Server_Interact_Implementation()
+{
+	static constexpr float TraceLength = 200.f;
+	static constexpr float TraceRadius = 20.f;
+
+	// Control rotation replicates, so the server can aim this itself and owes the client no
+	// trust at all. The few frames it lags behind cost nothing at this range.
+	const FVector TraceStart = GetPawnViewLocation();
+	const FVector TraceEnd = TraceStart + GetControlRotation().Vector() * TraceLength;
+
+	TArray<AActor*> ActorsToIgnore;
+	FHitResult Hit;
+	const bool bTraceResult = UKismetSystemLibrary::SphereTraceSingle(
+		GetWorld(), TraceStart, TraceEnd, TraceRadius,
+		UEngineTypes::ConvertToTraceType(SomnusCollision::Interaction),
+		false, ActorsToIgnore, EDrawDebugTrace::ForDuration,
+		Hit, true);
+
+	if (!bTraceResult)
+	{
+		return;
+	}
+
+	AActor* HitActor = Hit.GetActor();
+
+	// Execute_Interact asserts on an actor that does not implement the interface. The channel
+	// being interact-only makes that unlikely rather than impossible, and an assert is too
+	// expensive a way to find out.
+	if (HitActor && HitActor->Implements<USomnusInteractable>())
+	{
+		ISomnusInteractable::Execute_Interact(HitActor, this);
+	}
 }
 
 void ASomnusCharacter::Move(const FInputActionValue& Value)
@@ -536,9 +580,11 @@ static FString SomnusDebug_SlotLabel(EContainerSlotType SlotType)
 	}
 }
 
-// Lists the items of one grid. Container items are labelled with their InstanceID, which is
-// server-generated and replicated, so the same item can be matched across machines even
-// though actor and component names differ.
+// Lists the items of one grid, recursing into a container item's own compartments so
+// something rotated inside a worn rig/backpack shows up too, not just top-level items.
+// Container items are labelled with their InstanceID, which is server-generated and
+// replicated, so the same item can be matched across machines even though actor and
+// component names differ.
 static void SomnusDebug_DumpGridContents(USomnusInventoryComponent* Grid, const TCHAR* Indent)
 {
 	for (const FSomnusItemInstance& Item : Grid->GetAllItems())
@@ -547,14 +593,15 @@ static void SomnusDebug_DumpGridContents(USomnusInventoryComponent* Grid, const 
 
 		const FString InstanceLabel = Item.InstanceID.ToString(EGuidFormats::DigitsWithHyphens).Left(8);
 
+		const FString RotatedSuffix = Item.bRotated ? TEXT("  rotated") : TEXT("");
+
 		if (!Cast<USomnusContainerDataAsset>(Item.ItemData))
 		{
 			// Plain items carry their id and cell too, so stacks split off the same incoming
 			// instance can be told apart - two entries sharing an id is the bug to watch for.
 			UE_LOG(LogSomnusInventory, Warning, TEXT("%s%s x%d  [id %s]  at (%d,%d)%s"),
 				Indent, *ItemName, Item.StackCount, *InstanceLabel,
-				Item.GridPosition.X, Item.GridPosition.Y,
-				Item.bRotated ? TEXT("  rotated") : TEXT(""));
+				Item.GridPosition.X, Item.GridPosition.Y, *RotatedSuffix);
 			continue;
 		}
 
@@ -567,9 +614,19 @@ static void SomnusDebug_DumpGridContents(USomnusInventoryComponent* Grid, const 
 		}
 
 		UE_LOG(LogSomnusInventory, Warning,
-			TEXT("%s%s [id %s]  ContainerActor=%s, Compartments=%d"),
+			TEXT("%s%s [id %s]  at (%d,%d)%s  ContainerActor=%s, Compartments=%d"),
 			Indent, *ItemName, *InstanceLabel,
+			Item.GridPosition.X, Item.GridPosition.Y, *RotatedSuffix,
 			*Item.ContainerActor->GetName(), Item.ContainerActor->GetCompartments().Num());
+
+		const FString NestedIndent = FString(Indent) + TEXT("    ");
+		for (USomnusInventoryComponent* Compartment : Item.ContainerActor->GetCompartments())
+		{
+			if (Compartment)
+			{
+				SomnusDebug_DumpGridContents(Compartment, *NestedIndent);
+			}
+		}
 	}
 }
 

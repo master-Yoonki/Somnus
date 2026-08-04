@@ -14,7 +14,6 @@ UCLASS()
 class SOMNUS_API USomnusGA_LightMeleeAttack : public USomnusGA_MeleeAttack
 {
 	GENERATED_BODY()
-
 public:
 	USomnusGA_LightMeleeAttack();
 };

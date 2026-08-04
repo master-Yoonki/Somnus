@@ -185,11 +185,59 @@ int32 USomnusInventoryComponent::MergeExistingItemIntoStacks(FSomnusItemInstance
 	return IncomingItemInstance.StackCount;
 }
 
+/** True when Grid is one of MovingContainer's own compartments, or sits somewhere inside a
+ *  container nested within it. Descends through the contents rather than walking up an owner
+ *  chain, because a container held as an item in a grid has no owner to walk. */
+static bool SomnusInventory_IsInsideContainer(const USomnusInventoryComponent* Grid, const ASomnusContainerActor* MovingContainer)
+{
+	if (!Grid || !MovingContainer)
+	{
+		return false;
+	}
+
+	for (USomnusInventoryComponent* Compartment : MovingContainer->GetCompartments())
+	{
+		if (!Compartment)
+		{
+			continue;
+		}
+		if (Compartment == Grid)
+		{
+			return true;
+		}
+		for (const FSomnusItemInstance& Item : Compartment->GetAllItems())
+		{
+			if (Item.ContainerActor && SomnusInventory_IsInsideContainer(Grid, Item.ContainerActor))
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool USomnusInventoryComponent::IsInsideContainer(const USomnusInventoryComponent* Grid, const ASomnusContainerActor* MovingContainer)
+{
+	return SomnusInventory_IsInsideContainer(Grid, MovingContainer);
+}
+
 int32 USomnusInventoryComponent::AddExistingItemAnywhere(FSomnusItemInstance& IncomingItemInstance)
 {
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor || !OwnerActor->HasAuthority()) return IncomingItemInstance.StackCount;
 	if (!IncomingItemInstance.ItemData) return IncomingItemInstance.StackCount;
+
+	// Same refusal AddExistingItemAt makes, but taken before the loop rather than inside it.
+	// A rejection down there leaves StackCount untouched, which trips the progress ensure and
+	// blames CanFitAt/FindFirstFit for a disagreement they never had.
+	if (IncomingItemInstance.ContainerActor
+		&& SomnusInventory_IsInsideContainer(this, IncomingItemInstance.ContainerActor))
+	{
+		UE_LOG(LogSomnusInventory, Warning,
+			TEXT("AddExistingItemAnywhere: refusing to put %s inside its own storage - it and everything in it would be unreachable."),
+			*GetNameSafe(IncomingItemInstance.ItemData));
+		return IncomingItemInstance.StackCount;
+	}
 
 	MergeExistingItemIntoStacks(IncomingItemInstance);
 
@@ -224,6 +272,20 @@ int32 USomnusInventoryComponent::AddExistingItemAt(FSomnusItemInstance& Incoming
 	AActor* OwnerActor = GetOwner();
 	if (!OwnerActor || !OwnerActor->HasAuthority()) return IncomingItemInstance.StackCount;
 	if (IncomingItemInstance.StackCount <= 0) return IncomingItemInstance.StackCount;
+
+	// This and AddExistingItemAnywhere are the only two doors an existing instance enters a
+	// grid through, so refusing here covers every caller - cross-grid drag, unequip, pickup -
+	// without any of them having to remember. Nesting a container inside its own storage would
+	// make it and everything in it unreachable, with no path left to get any of it back.
+	if (IncomingItemInstance.ContainerActor
+		&& SomnusInventory_IsInsideContainer(this, IncomingItemInstance.ContainerActor))
+	{
+		UE_LOG(LogSomnusInventory, Warning,
+			TEXT("AddExistingItemAt: refusing to put %s inside its own storage - it and everything in it would be unreachable."),
+			*GetNameSafe(IncomingItemInstance.ItemData));
+		return IncomingItemInstance.StackCount;
+	}
+
 	if (FSomnusItemInstance* ExistingItemInstance = GetItemAt(TopLeftX, TopLeftY))
 	{
 		if (ExistingItemInstance->ItemData->ItemId != IncomingItemInstance.ItemData->ItemId)
@@ -490,37 +552,6 @@ void USomnusInventoryComponent::Server_TryMoveItem_Implementation(FGuid Instance
 	TryMoveItem(InstanceID, NewTopLeftX, NewTopLeftY, bNewRotated);
 }
 
-/** True when Grid is one of MovingContainer's own compartments, or sits somewhere inside a
- *  container nested within it. Descends through the contents rather than walking up an owner
- *  chain, because a container held as an item in a grid has no owner to walk. */
-static bool SomnusInventory_IsInsideContainer(const USomnusInventoryComponent* Grid, const ASomnusContainerActor* MovingContainer)
-{
-	if (!Grid || !MovingContainer)
-	{
-		return false;
-	}
-
-	for (USomnusInventoryComponent* Compartment : MovingContainer->GetCompartments())
-	{
-		if (!Compartment)
-		{
-			continue;
-		}
-		if (Compartment == Grid)
-		{
-			return true;
-		}
-		for (const FSomnusItemInstance& Item : Compartment->GetAllItems())
-		{
-			if (Item.ContainerActor && SomnusInventory_IsInsideContainer(Grid, Item.ContainerActor))
-			{
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
 /** Resolves the actor a piece of storage ultimately belongs to, so a moved container can
  *  inherit it. Compartments live on container actors, which are themselves owned by whoever
  *  holds them, so this collapses that chain down to the character (or pickup actor) at its
@@ -571,16 +602,10 @@ bool USomnusInventoryComponent::MoveItemFrom(USomnusInventoryComponent* Source, 
 		Moving = *SourceItem;
 	}
 
-	if (Moving.ContainerActor && SomnusInventory_IsInsideContainer(this, Moving.ContainerActor))
-	{
-		UE_LOG(LogSomnusInventory, Warning,
-			TEXT("MoveItemFrom: refusing to put %s inside its own storage - it and everything in it would be unreachable."),
-			*Moving.ItemData->GetName());
-		return false;
-	}
-
 	// Add first, remove second. The other order destroys the item whenever the placement is
-	// rejected - same rule EquipInstance follows.
+	// rejected - same rule EquipInstance follows. A container dropped into its own storage is
+	// one of the rejections AddExistingItemAt makes on its own, and it arrives here as a full
+	// leftover, so it falls out at the check below with the source untouched.
 	const int32 QuantityBefore = Moving.StackCount;
 	const int32 Leftover = AddExistingItemAt(Moving, TopLeftX, TopLeftY, bRotated);
 
@@ -743,6 +768,16 @@ FSomnusItemInstance* USomnusInventoryComponent::FindItemInstanceMutable(FGuid ID
 		}
 	}
 	return nullptr;
+}
+
+bool USomnusInventoryComponent::FindItemByID(FGuid InstanceID, FSomnusItemInstance& OutItem) const
+{
+	if (const FSomnusItemInstance* FoundItem = FindItemInstance(InstanceID))
+	{
+		OutItem = *FoundItem;
+		return true;
+	}
+	return false;
 }
 
 void USomnusInventoryComponent::OnItemAdded(const FSomnusItemInstance& Item)
