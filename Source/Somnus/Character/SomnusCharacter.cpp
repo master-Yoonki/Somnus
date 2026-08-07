@@ -105,12 +105,6 @@ void ASomnusCharacter::PossessedBy(AController* NewController)
 		ASC->InitAbilityActorInfo(PS, this);
 
 		// Apply default GEs (stamina regen, passive buffs, etc.) — guarded against repossession
-		const USomnusAttributeSet* AS = PS->GetAttributeSet();
-		UE_LOG(LogTemp, Warning, TEXT("[Somnus][Possess] %s  bDefaultEffectsApplied=%d  Health BEFORE=%.1f/%.1f  DefaultGE count=%d"),
-			*GetNameSafe(this), bDefaultEffectsApplied ? 1 : 0,
-			AS ? AS->GetHealth() : -1.f, AS ? AS->GetMaxHealth() : -1.f,
-			DefaultGameplayEffects.Num());
-
 		if (!bDefaultEffectsApplied)
 		{
 			for (const TSubclassOf<UGameplayEffect>& GEClass : DefaultGameplayEffects)
@@ -122,14 +116,10 @@ void ASomnusCharacter::PossessedBy(AController* NewController)
 				if (SpecHandle.IsValid())
 				{
 					ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-					UE_LOG(LogTemp, Warning, TEXT("[Somnus][Possess]   Applied %s"), *GetNameSafe(GEClass));
 				}
 			}
 			bDefaultEffectsApplied = true;
 		}
-
-		UE_LOG(LogTemp, Warning, TEXT("[Somnus][Possess] %s  Health AFTER =%.1f/%.1f"),
-			*GetNameSafe(this), AS ? AS->GetHealth() : -1.f, AS ? AS->GetMaxHealth() : -1.f);
 
 		// Grant innate abilities (e.g., Jump) — guarded against repossession
 		if (!bDefaultAbilitiesGiven)
@@ -213,7 +203,6 @@ void ASomnusCharacter::ServerSwitchWeapon_Implementation(int32 SlotIndex)
 	if (EquippedWeapon)
 	{
 		EquippedWeapon->Unequip();
-		EquippedWeapon->SetActorHiddenInGame(true);
 		EquippedWeapon = nullptr;
 	}
 
@@ -223,7 +212,6 @@ void ASomnusCharacter::ServerSwitchWeapon_Implementation(int32 SlotIndex)
 		ASomnusWeapon* NewWeapon = WeaponInventory[SlotIndex - 1];
 		if (NewWeapon)
 		{
-			NewWeapon->SetActorHiddenInGame(false);
 			NewWeapon->Equip(this);
 			EquippedWeapon = NewWeapon;
 		}
@@ -452,6 +440,11 @@ void ASomnusCharacter::Die(const FVector& HitDirection)
 
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
 	if (!ASC) return;
+	
+	if (GetEquippedWeapon())
+	{
+		GetEquippedWeapon()->Unequip();
+	}
 
 	// --- Server-only GAS logic ---
 	// 1. Cancel all active abilities
@@ -463,7 +456,7 @@ void ASomnusCharacter::Die(const FVector& HitDirection)
 	ASC->RemoveActiveEffectsWithGrantedTags(EffectTagsToRemove);
 
 	// 3. Add the dead state tag
-	ASC->AddLooseGameplayTag(SomnusTags::State_Dead);
+	ASC->AddLooseGameplayTag(SomnusTags::State_Dead, 1, EGameplayTagReplicationState::TagOnly);
 
 	// 4. Multicast visual death (ragdoll, impulse, UI) to all machines
 	MulticastDeath(HitDirection);

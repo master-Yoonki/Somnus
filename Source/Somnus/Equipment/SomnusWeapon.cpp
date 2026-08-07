@@ -63,6 +63,8 @@ void ASomnusWeapon::Equip(ASomnusCharacter* TargetCharacter)
 			}
 		}
 	}
+	
+	SetActorHiddenInGame(false);
 }
 
 void ASomnusWeapon::Unequip()
@@ -86,6 +88,7 @@ void ASomnusWeapon::Unequip()
 
 	// 2. Physical Detachment (Server side)
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	SetActorHiddenInGame(true);
 
 	OwningCharacter = nullptr;
 	SetOwner(nullptr);

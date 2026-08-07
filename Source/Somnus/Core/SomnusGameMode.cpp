@@ -8,7 +8,6 @@
 #include "AbilitySystemComponent.h"
 #include "GameplayEffectTypes.h"
 #include "Core/SomnusGameplayTags.h"
-#include "AbilitySystem/Attributes/SomnusAttributeSet.h"
 
 ASomnusGameMode::ASomnusGameMode()
 {
@@ -19,8 +18,6 @@ ASomnusGameMode::ASomnusGameMode()
 void ASomnusGameMode::RequestRespawn(AController* Controller)
 {
 	if (!Controller) return;
-
-	UE_LOG(LogTemp, Warning, TEXT("[Somnus][Respawn] RequestRespawn for %s"), *GetNameSafe(Controller));
 
 	// Clean up ASC state on PlayerState before spawning new pawn
 	if (ASomnusPlayerState* PS = Controller->GetPlayerState<ASomnusPlayerState>())
@@ -36,12 +33,6 @@ void ASomnusGameMode::RequestRespawn(AController* Controller)
 			// Remove all active effects — PossessedBy will re-apply DefaultGameplayEffects
 			FGameplayEffectQuery RemoveAllQuery;
 			ASC->RemoveActiveEffects(RemoveAllQuery);
-
-			if (const USomnusAttributeSet* AS = PS->GetAttributeSet())
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[Somnus][Respawn] After cleanup: Health=%.1f/%.1f"),
-					AS->GetHealth(), AS->GetMaxHealth());
-			}
 		}
 	}
 
