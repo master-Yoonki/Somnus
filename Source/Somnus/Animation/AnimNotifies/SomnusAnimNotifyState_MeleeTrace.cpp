@@ -8,9 +8,10 @@
 #include "Core/SomnusGameplayTags.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Components/StaticMeshComponent.h"
+#include "Core/SomnusCollisionChannels.h"
 
 void USomnusAnimNotifyState_MeleeTrace::NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation,
-	float TotalDuration, const FAnimNotifyEventReference& EventReference)
+                                                    float TotalDuration, const FAnimNotifyEventReference& EventReference)
 {
 	Super::NotifyBegin(MeshComp, Animation, TotalDuration, EventReference);
 	AlreadyHitActors.Empty();
@@ -55,7 +56,7 @@ void USomnusAnimNotifyState_MeleeTrace::NotifyTick(USkeletalMeshComponent* MeshC
         BaseLocation,
         TipLocation,
         Radius,
-        UEngineTypes::ConvertToTraceType(ECC_Pawn),
+        UEngineTypes::ConvertToTraceType(SomnusCollision::Weapon),
         false,
         ActorsToIgnore,
         DebugTrace,
@@ -77,6 +78,7 @@ void USomnusAnimNotifyState_MeleeTrace::NotifyTick(USkeletalMeshComponent* MeshC
             FGameplayEventData Payload;
             Payload.Instigator = OwnerChar;
             Payload.Target = HitActor;
+        	Payload.TargetData = UAbilitySystemBlueprintLibrary::AbilityTargetDataFromHitResult(Hit);
 
             UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(OwnerChar, SomnusTags::Event_Melee_Hit, Payload);
         }

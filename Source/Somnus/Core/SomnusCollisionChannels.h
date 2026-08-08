@@ -18,4 +18,9 @@ namespace SomnusCollision
 	 *  is Ignore, so only actors that opt in are ever hit and the trace needs no filtering of
 	 *  its own - unlike Visibility, which the ground-distance trace also rides on. */
 	inline constexpr ECollisionChannel Interaction = ECC_GameTraceChannel1;
+
+	/** Weapon damage traces (melee sweeps, future hitscan). Default response is Block, but
+	 *  the Pawn profile opts out so a swing passes the capsule and lands on the character
+	 *  mesh instead - that is what keeps the reported bone, and the hit reaction, meaningful. */
+	inline constexpr ECollisionChannel Weapon = ECC_GameTraceChannel2;
 }

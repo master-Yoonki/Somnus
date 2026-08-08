@@ -22,7 +22,10 @@ public class Somnus : ModuleRules
 			"GameplayAbilities", 
 			"GameplayTags", 
 			"GameplayTasks",
-			"AnimGraphRuntime"
+			"AnimGraphRuntime",
+			"AIModule",
+			"NavigationSystem",
+			"PhysicsControl"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "SlateCore" });

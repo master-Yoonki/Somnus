@@ -13,3 +13,5 @@ Build/
 *.suo
 *.DS_Store
 *.DotSettings.user
+# Local working notes - never commit
+HANDOFF.md

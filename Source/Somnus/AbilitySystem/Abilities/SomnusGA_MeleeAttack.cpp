@@ -5,6 +5,8 @@
 #include "AbilitySystem/Tasks/SomnusAT_PlayMontageAndWaitForEvent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystem/SomnusGameplayEffectContext.h"
+#include "AbilitySystem/Tasks/SomnusAT_TrackStrikeVelocity.h"
 #include "Core/SomnusGameplayTags.h"
 
 USomnusGA_MeleeAttack::USomnusGA_MeleeAttack()
@@ -25,20 +27,37 @@ void USomnusGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Han
 		return;
 	}
 
+	// Subclasses decide which montage to play (single montage, directional selection, etc.)
+	UAnimMontage* MontageToPlay = GetMontageToPlay(TriggerEventData);
+	if (!MontageToPlay)
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
 	// Combined task: plays montage AND listens for melee hit events simultaneously
 	FGameplayTagContainer EventTagFilter;
 	EventTagFilter.AddTag(SomnusTags::Event_Melee_Hit);
 
-	USomnusAT_PlayMontageAndWaitForEvent* Task = USomnusAT_PlayMontageAndWaitForEvent::PlayMontageAndWaitForEvent(
-		this, NAME_None, AttackMontage, EventTagFilter, MontagePlayRate);
+	USomnusAT_PlayMontageAndWaitForEvent* PlayMontageAndWaitForEventTask = USomnusAT_PlayMontageAndWaitForEvent::PlayMontageAndWaitForEvent(
+		this, NAME_None, MontageToPlay, EventTagFilter, MontagePlayRate);
 
-	Task->OnCompleted.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCompleted);
-	Task->OnBlendOut.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCompleted);
-	Task->OnInterrupted.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCancelled);
-	Task->OnCancelled.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCancelled);
-	Task->EventReceived.AddDynamic(this, &USomnusGA_MeleeAttack::OnMeleeHit);
-
-	Task->ReadyForActivation();
+	PlayMontageAndWaitForEventTask->OnCompleted.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCompleted);
+	PlayMontageAndWaitForEventTask->OnBlendOut.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCompleted);
+	PlayMontageAndWaitForEventTask->OnInterrupted.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCancelled);
+	PlayMontageAndWaitForEventTask->OnCancelled.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCancelled);
+	PlayMontageAndWaitForEventTask->EventReceived.AddDynamic(this, &USomnusGA_MeleeAttack::OnMeleeHit);
+	
+	PlayMontageAndWaitForEventTask->ReadyForActivation();
+	
+	if (ISomnusStrikeSource* StrikeSource = Cast<ISomnusStrikeSource>(GetAvatarActorFromActorInfo()))
+	{
+		TArray<FSomnusStrikeSourceInfo> SourceInfos = StrikeSource->GetStrikeSources();
+		StrikeTracker
+			= USomnusAT_TrackStrikeVelocity::TrackStrikeVelocity(this, NAME_None, SourceInfos);
+		
+		StrikeTracker->ReadyForActivation();
+	}
 }
 
 void USomnusGA_MeleeAttack::OnMontageCompleted(FGameplayTag EventTag, FGameplayEventData EventData)
@@ -64,11 +83,40 @@ void USomnusGA_MeleeAttack::OnMeleeHit(FGameplayTag EventTag, FGameplayEventData
 	{
 		return;
 	}
+	
+	FHitResult HitResult = UAbilitySystemBlueprintLibrary::GetHitResultFromTargetData(EventData.TargetData, 0);
 
-	FGameplayEffectSpecHandle SpecHandle = MakeOutgoingGameplayEffectSpec(DamageEffectClass);
-	if (SpecHandle.IsValid())
-	{
-		SpecHandle.Data->SetSetByCallerMagnitude(SomnusTags::Data_Damage, DamageAmount);
-		TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+	FGameplayEffectSpecHandle DealDamageSpecHandle = MakeOutgoingGameplayEffectSpec(DamageEffectClass);
+	
+	if (DealDamageSpecHandle.IsValid())
+	{	
+		if (EventData.TargetData.Num() > 0)
+		{
+			DealDamageSpecHandle.Data->GetContext().AddHitResult(HitResult);
+		}
+		DealDamageSpecHandle.Data->SetSetByCallerMagnitude(SomnusTags::Data_Damage, DamageAmount);
+		
+		if (StrikeTracker)
+		{
+			FGameplayEffectContextHandle Ctx = DealDamageSpecHandle.Data->GetContext();
+		
+			if (FSomnusGameplayEffectContext* SomnusCtx = static_cast<FSomnusGameplayEffectContext*>(Ctx.Get()))
+			{
+				FVector StrikeVelocity;
+				float StrikeWeight;
+				StrikeTracker->GetVelocityAtContactPoint(HitResult.ImpactPoint, StrikeVelocity, StrikeWeight);
+
+				const FVector Impulse = StrikeVelocity * StrikeWeight * ImpulseScale;
+				
+				SomnusCtx->SetHitImpulse(Impulse);
+				
+				const FVector Start = HitResult.ImpactPoint;
+				const FVector End = Start + StrikeVelocity * 0.1f;   
+				DrawDebugDirectionalArrow(GetWorld(), Start, End, 20.f, FColor::Red, false, 2.f, 0, 1.5f);
+			}
+		}
+		
+		TargetASC->ApplyGameplayEffectSpecToSelf(*DealDamageSpecHandle.Data.Get());
 	}
+	
 }

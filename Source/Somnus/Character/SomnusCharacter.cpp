@@ -28,6 +28,9 @@
 #include "Core/SomnusInteractable.h"
 #include "Core/SomnusCollisionChannels.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Character/SomnusHitReactComponent.h"
+#include "Equipment/SomnusMeleeWeapon.h"
+#include "PhysicsControlComponent.h"
 
 ASomnusCharacter::ASomnusCharacter()
 {
@@ -57,7 +60,13 @@ ASomnusCharacter::ASomnusCharacter()
 
 	ContainerEquipmentComponent = CreateDefaultSubobject<USomnusContainerEquipComponent>(TEXT("ContainerEquip"));
 
+	HitReact = CreateDefaultSubobject<USomnusHitReactComponent>(TEXT("HitReact"));
+
+	PhysicsControl = CreateDefaultSubobject<UPhysicsControlComponent>(TEXT("PhysicsControl"));
+
 	CurrentGait = ESomnusGait::None;
+	
+	GetMesh()->PhysicsTransformUpdateMode = EPhysicsTransformUpdateMode::ComponentTransformIsKinematic;
 }
 
 void ASomnusCharacter::Tick(float DeltaTime)
@@ -146,6 +155,15 @@ void ASomnusCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ASomnusCharacter, WeaponInventory);
 	DOREPLIFETIME(ASomnusCharacter, EquippedWeapon);
+}
+
+TArray<FSomnusStrikeSourceInfo> ASomnusCharacter::GetStrikeSources() const
+{
+	if (ASomnusMeleeWeapon* MeleeWeapon = Cast<ASomnusMeleeWeapon>(EquippedWeapon))
+	{
+		return MeleeWeapon->GetStrikeSources();
+	}
+	return {};
 }
 
 void ASomnusCharacter::BeginPlay()

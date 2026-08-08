@@ -19,6 +19,7 @@ namespace SomnusTags
 	// Events
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Melee_Hit);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Death);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_HitReact);
 
 	// Weapon-granted permission tags (added/removed on equip/unequip)
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Weapon_Enable_HeavyAttack);
@@ -30,6 +31,7 @@ namespace SomnusTags
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Melee_Light);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Aim);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Jump);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_HitReact);
 
 	// Cooldown tags
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cooldown_Ability_Jump);
@@ -55,4 +57,8 @@ namespace SomnusTags
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Ability_Attack);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Ability_Aim);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Ability_Jump);
+	
+	// Zombie
+	// Zombie Ability identity tags
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Zombie_Melee);
 };
