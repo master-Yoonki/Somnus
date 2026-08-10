@@ -3,260 +3,300 @@
 
 #include "AI/SomnusZombieAIController.h"
 
-#include "NavigationSystem.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
-#include "Character/SomnusCharacter.h"
-#include "Character/Zombie/SomnusZombieCharacter.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "NavigationData.h"
+#include "Navigation/PathFollowingComponent.h"
 #include "Perception/AIPerceptionComponent.h"
+#include "GameFramework/Character.h"
+#include "Perception/AISense_Sight.h"
 #include "Perception/AISenseConfig_Sight.h"
-
-DEFINE_LOG_CATEGORY(LogZombieAI)
+#include "TimerManager.h"
 
 ASomnusZombieAIController::ASomnusZombieAIController()
 {
-	AIPerceptionComponent = CreateDefaultSubobject<UAIPerceptionComponent>("AIPerceptionComponent");
-	
-	SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>("SightConfig");
-	SightConfig->DetectionByAffiliation.bDetectEnemies = true;
-	SightConfig->DetectionByAffiliation.bDetectFriendlies = true;
-	SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
-	
-	AIPerceptionComponent->ConfigureSense(*SightConfig);
-	AIPerceptionComponent->SetDominantSense(SightConfig->GetSenseImplementation());
-	
-	AIPerceptionComponent->OnTargetPerceptionUpdated.AddDynamic(this, &ASomnusZombieAIController::OnTargetDetected);
+	UAIPerceptionComponent* Perception = CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("Perception"));
+	UAISenseConfig_Sight* SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
 
-	StateConfigs.Add(EZombieState::Unaware,      FZombieStateConfig{  38.f });  // Walk_01
-	StateConfigs.Add(EZombieState::Aware,        FZombieStateConfig{ 127.f });  // Walk_Fast01
-	StateConfigs.Add(EZombieState::Hunt_Predict, FZombieStateConfig{ 320.f });  // Run_01
-	StateConfigs.Add(EZombieState::Hunt_Certain, FZombieStateConfig{ 697.f });  // Sprint_01
-	StateConfigs.Add(EZombieState::Attack,       FZombieStateConfig{   0.f });
+	// Seeds only. SensesConfig is an Instanced array, so a blueprint subclass gets its own deep
+	// copy of this object and the engine reads that copy - anything written here at runtime would
+	// land on an orphan. Tune sight in the blueprint under AI Perception -> Senses Config.
+	SightConfig->SightRadius = 1500.0f;
+	SightConfig->LoseSightRadius = 1800.0f;
+	SightConfig->PeripheralVisionAngleDegrees = 60.0f;
+	SightConfig->SetMaxAge(5.0f);
+
+	// All three affiliation flags default to false, which senses nothing whatsoever. Without a
+	// GenericTeamAgent implementation every actor reads as Neutral, so detect every affiliation
+	// and narrow this once teams exist.
+	SightConfig->DetectionByAffiliation.bDetectEnemies = true;
+	SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
+	SightConfig->DetectionByAffiliation.bDetectFriendlies = true;
+
+	Perception->ConfigureSense(*SightConfig);
+	Perception->SetDominantSense(SightConfig->GetSenseImplementation());
+
+	// AAIController owns a PerceptionComponent pointer of its own, and GetPerceptionComponent()
+	// returns that one - not whatever subobject we happen to hold. EQS's PerceivedActors
+	// generator and the gameplay debugger both read it, so hand ours over.
+	SetPerceptionComponent(*Perception);
+
+	PrimaryActorTick.bCanEverTick = true;
+
+	//                                        Speed  Accel  Braking  YawRate
+	MoveConfigByState.Add(ESomnusZombieMoveState::Idle,   {  80.0f, 200.0f, 600.0f,  90.0f });
+	MoveConfigByState.Add(ESomnusZombieMoveState::Wander, { 110.0f, 250.0f, 500.0f, 120.0f });
+	MoveConfigByState.Add(ESomnusZombieMoveState::Alert,  { 140.0f, 400.0f, 500.0f, 240.0f });
+	MoveConfigByState.Add(ESomnusZombieMoveState::Chase,  { 320.0f, 800.0f, 400.0f, 360.0f });
 }
 
-void ASomnusZombieAIController::SetCurrentTarget(AActor* NewTarget)
+void ASomnusZombieAIController::GetActorEyesViewPoint(FVector& OutLocation, FRotator& OutRotation) const
 {
-	CurrentTarget = NewTarget;
-	if (UBlackboardComponent* BB = GetBlackboardComponent())
+	Super::GetActorEyesViewPoint(OutLocation, OutRotation);
+	
+	if (const ACharacter* ZombieChar = Cast<ACharacter>(GetPawn()))
 	{
-		BB->SetValueAsObject("TargetActor", NewTarget);
+		if (const USkeletalMeshComponent* MeshComp = ZombieChar->GetMesh())
+		{
+			if (const UAnimInstance* AnimInstance = MeshComp->GetAnimInstance())
+			{
+				const float ScanYaw = AnimInstance->GetCurveValue(ScanYawCurveName);
+				OutRotation.Yaw += ScanYaw;
+
+				// This runs on every perception update and every line-of-sight test, so only
+				// report while the curve is actually driving something.
+				if (bLogScanYaw && !FMath::IsNearlyZero(ScanYaw))
+				{
+					UE_LOG(LogTemp, Log, TEXT("[Zombie] %s = %.2f  ->  Yaw %.2f"),
+						*ScanYawCurveName.ToString(), ScanYaw, OutRotation.Yaw);
+				}
+			}
+		}
 	}
 }
 
-void ASomnusZombieAIController::UpdateTrackingData(FVector Location, FVector Velocity, float Time)
+FPathFollowingRequestResult ASomnusZombieAIController::MoveTo(const FAIMoveRequest& MoveRequest,
+                                                                  FNavPathSharedPtr* OutPath)
 {
-	LastKnownLocation = Location;
-	LastKnownVelocity = Velocity;
-	LastSeenTime = Time;
+	const FPathFollowingRequestResult Result = Super::MoveTo(MoveRequest, OutPath);
+
+	// Only actor goals are observed for movement at all - a location goal never repaths, so
+	// there is no tether to widen.
+	if (GoalTetherDistance > 0.0f && MoveRequest.IsMoveToActorRequest())
+	{
+		if (const UPathFollowingComponent* PathComp = GetPathFollowingComponent())
+		{
+			if (const FNavPathSharedPtr Path = PathComp->GetPath())
+			{
+				Path->SetGoalActorTetherDistance(GoalTetherDistance);
+			}
+		}
+	}
+
+	return Result;
+}
+
+void ASomnusZombieAIController::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (UAIPerceptionComponent* Perception = GetPerceptionComponent())
+	{
+		Perception->OnTargetPerceptionUpdated.AddDynamic(this, &ASomnusZombieAIController::HandleTargetPerceptionUpdated);
+	}
 }
 
 void ASomnusZombieAIController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 
-	if (const ASomnusZombieCharacter* ZombieCharacter = Cast<ASomnusZombieCharacter>(InPawn))
-	{
-		if (ZombieCharacter->ShouldDisableAI())
-		{
-			return;
-		}
-	}
-
 	if (BehaviorTree)
 	{
 		RunBehaviorTree(BehaviorTree);
-		SetState(EZombieState::Unaware);
 	}
 
-}
-
-void ASomnusZombieAIController::ExecuteTransitionLogic(UBlackboardComponent* BlackboardComponent, EZombieState OldState, EZombieState NewState)
-{
-	if (!BlackboardComponent) return;
-	// Exit logic for OLD state
-	switch (OldState)
+	// Registered after RunBehaviorTree because that is what creates the blackboard. Observing the
+	// key rather than applying speed from a task means any writer - task, service, C++ - gets the
+	// speed change for free, and the blackboard stays the single account of what state we are in.
+	if (UBlackboardComponent* BlackboardComp = GetBlackboardComponent())
 	{
-	case EZombieState::Aware:
+		const FBlackboard::FKey KeyID = BlackboardComp->GetKeyID(MoveStateKeyName);
+		if (KeyID != FBlackboard::InvalidKey)
 		{
-			if (NewState != EZombieState::Aware)
-			{
-				GetWorldTimerManager().ClearTimer(AwareTimerHandle);
-			}
+			BlackboardComp->RegisterObserver(KeyID, this,
+				FOnBlackboardChangeNotification::CreateUObject(this, &ASomnusZombieAIController::OnMoveStateChanged));
 		}
-		break;
-			
-	case EZombieState::Hunt_Certain:
-		{
-			// Clear grace timer if re-acquiring target or leaving chase
-			GetWorldTimerManager().ClearTimer(GraceTimerHandle);
-		}
-		break;
-	default: break;
-	}
-		
-	// Enter logic for NEW state
-	switch (NewState)
-	{
-	case EZombieState::Aware:
-		{
-			// SetTimer on an existing handle automatically clears the old timer,
-			// so this handles both fresh entry AND re-entry (timer reset)
-			GetWorldTimerManager().SetTimer(AwareTimerHandle, this, &ASomnusZombieAIController::OnAwareDurationExpired, AwareDuration, false);
-		}
-		break;
-	case EZombieState::Hunt_Predict:
-		{
-			// Extrapolate where the player likely went (overshoot by 2.5x to be aggressive)
-			const float ElapsedTime = GetWorld()->GetTimeSeconds() - LastSeenTime;
-			FVector TargetSpot = LastKnownLocation + (LastKnownVelocity * ElapsedTime * 2.5f);
 
-			// Prevent projecting through walls by casting a ray
-			FHitResult HitResult;
-			FCollisionQueryParams QueryParams;
-			if (APawn* ControlledPawn = GetPawn())
-			{
-				QueryParams.AddIgnoredActor(ControlledPawn);
-			}
-				
-			if (GetWorld()->LineTraceSingleByChannel(HitResult, LastKnownLocation, TargetSpot, ECC_Visibility, QueryParams))
-			{
-				// We hit a wall! Cap the prediction at the wall
-				TargetSpot = HitResult.Location;
-			}
+		// Snap on possession instead of ramping - otherwise every zombie spends its first seconds
+		// accelerating up from zero regardless of the state it spawned in.
+		RefreshTargetMoveConfig();
+		LiveMoveConfig = TargetMoveConfig;
+		ApplyLiveMoveConfig();
 
-			// Snap to NavMesh — if extrapolation landed off-mesh, fall back to last known position
-			FNavLocation ProjectedLocation;
-			FVector FinalLocation;
-			if (UNavigationSystemV1::GetCurrent(GetWorld())->ProjectPointToNavigation(TargetSpot, ProjectedLocation))
-			{
-				FinalLocation = ProjectedLocation.Location;
-			}
-			else
-			{
-				FinalLocation = LastKnownLocation;
-			}
-
-			BlackboardComponent->SetValueAsVector("PredictedLocation", FinalLocation);
-			
-		}
-		break;
-	default: break;
+		// Possession and BeginPlay do not have a fixed order, so a perception update can land while
+		// there is no blackboard to write it to. A default stimulus carries an invalid location and
+		// so cannot overwrite anything - this only recovers a target that was already in sight.
+		RefreshTarget(FAIStimulus());
 	}
 }
 
-void ASomnusZombieAIController::OnTargetDetected(AActor* Actor, FAIStimulus const Stimulus)
+EBlackboardNotificationResult ASomnusZombieAIController::OnMoveStateChanged(
+	const UBlackboardComponent& BlackboardComp, FBlackboard::FKey KeyID)
 {
-	// Make sure we actually saw a Player character
-	if (ASomnusCharacter* Player = Cast<ASomnusCharacter>(Actor))
-	{
-		// We also need to check if we just spotted them,
-		// rather than the engine telling us we just lost sight of them!
-		UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
-		if (!BlackboardComponent) return;
-		APawn* ControlledPawn = GetPawn();
-		if (!ControlledPawn) return;
-		FVector ActorLocation = Player->GetActorLocation();
-		
-		if (Stimulus.WasSuccessfullySensed())
-		{
-			const float DistanceToPlayer = FVector::Distance(ControlledPawn->GetActorLocation(), ActorLocation);
-			if (DistanceToPlayer < HuntStartDistance)
-			{
-				if (CurrentState == EZombieState::Unaware || CurrentState == EZombieState::Aware)
-				{
-					CurrentTarget = Actor;
-					BlackboardComponent->SetValueAsObject("TargetActor", Actor);
-					LastKnownLocation = CurrentTarget->GetActorLocation();
-					LastKnownVelocity = CurrentTarget->GetVelocity();
-					LastSeenTime = GetWorld()->GetTimeSeconds();
-					SetState(EZombieState::Hunt_Certain);
-				}
-			}
-			else
-			{
-				if (CurrentState == EZombieState::Unaware || CurrentState == EZombieState::Aware)
-				{
-					// Just remember WHERE we saw them, but don't lock onto the Actor
-					LastKnownLocation = ActorLocation;
-					
-					BlackboardComponent->SetValueAsVector("MemoryLocation", LastKnownLocation);
-					// Transition to Aware
-					SetState(EZombieState::Aware);
-				}
-			}
+	RefreshTargetMoveConfig();
+	return EBlackboardNotificationResult::ContinueObserving;
+}
 
-			// Re-acquisition: spotted player again while predicting
-			if (CurrentState == EZombieState::Hunt_Predict)
-			{
-				CurrentTarget = Actor;
-				BlackboardComponent->SetValueAsObject("TargetActor", Actor);
-				SetState(EZombieState::Hunt_Certain);
-			}
-		}
-		else
-		{
-			// Sight lost — only care if we lost our current chase target while in HuntCertain
-			if (Actor == CurrentTarget && CurrentState == EZombieState::Hunt_Certain)
-			{
-				UpdateTrackingData(Actor->GetActorLocation(), Actor->GetVelocity(), GetWorld()->GetTimeSeconds());
-				GetWorldTimerManager().SetTimer(GraceTimerHandle, this, &ASomnusZombieAIController::OnGraceDurationExpired, CertainGraceTime, false);
-			}
-		}
+void ASomnusZombieAIController::RefreshTargetMoveConfig()
+{
+	const UBlackboardComponent* BlackboardComp = GetBlackboardComponent();
+	if (!BlackboardComp) return;
+
+	const ESomnusZombieMoveState State =
+		static_cast<ESomnusZombieMoveState>(BlackboardComp->GetValueAsEnum(MoveStateKeyName));
+
+	// A state with no entry keeps the previous target rather than defaulting, so a half-filled
+	// map degrades into "nothing changes" instead of snapping every zombie to a stop.
+	if (const FSomnusZombieMoveConfig* Config = MoveConfigByState.Find(State))
+	{
+		TargetMoveConfig = *Config;
 	}
 }
 
-void ASomnusZombieAIController::SetState(EZombieState NewState, const FString& Reason)
+void ASomnusZombieAIController::Tick(float DeltaSeconds)
 {
-	EZombieState OldState = CurrentState;
+	Super::Tick(DeltaSeconds);
+
+	// Speeding up and slowing down run at different rates on purpose: the lunge should land
+	// immediately, the wind-down should linger. Picking the rate off speed alone keeps the whole
+	// config moving as one - turn rate must not still be at chase values while speed says idle.
+	const bool bRampingUp = TargetMoveConfig.MaxWalkSpeed > LiveMoveConfig.MaxWalkSpeed;
+	const float Rate = bRampingUp ? MoveConfigRampUpRate : MoveConfigRampDownRate;
+
+	if (Rate <= 0.0f)
+	{
+		LiveMoveConfig = TargetMoveConfig;
+	}
+	else
+	{
+		LiveMoveConfig.MaxWalkSpeed = FMath::FInterpTo(LiveMoveConfig.MaxWalkSpeed, TargetMoveConfig.MaxWalkSpeed, DeltaSeconds, Rate);
+		LiveMoveConfig.MaxAcceleration = FMath::FInterpTo(LiveMoveConfig.MaxAcceleration, TargetMoveConfig.MaxAcceleration, DeltaSeconds, Rate);
+		LiveMoveConfig.BrakingDecelerationWalking = FMath::FInterpTo(LiveMoveConfig.BrakingDecelerationWalking, TargetMoveConfig.BrakingDecelerationWalking, DeltaSeconds, Rate);
+		LiveMoveConfig.RotationRateYaw = FMath::FInterpTo(LiveMoveConfig.RotationRateYaw, TargetMoveConfig.RotationRateYaw, DeltaSeconds, Rate);
+	}
+
+	ApplyLiveMoveConfig();
+}
+
+void ASomnusZombieAIController::ApplyLiveMoveConfig()
+{
+	const ACharacter* ZombieChar = Cast<ACharacter>(GetPawn());
+	if (!ZombieChar) return;
+
+	if (UCharacterMovementComponent* Movement = ZombieChar->GetCharacterMovement())
+	{
+		Movement->MaxWalkSpeed = LiveMoveConfig.MaxWalkSpeed;
+		Movement->MaxAcceleration = LiveMoveConfig.MaxAcceleration;
+		Movement->BrakingDecelerationWalking = LiveMoveConfig.BrakingDecelerationWalking;
+		Movement->RotationRate = FRotator(0.0f, LiveMoveConfig.RotationRateYaw, 0.0f);
+	}
+}
+
+void ASomnusZombieAIController::HandleTargetPerceptionUpdated(AActor* Actor, FAIStimulus Stimulus)
+{
+	// Which actor changed is deliberately ignored - the perception set is re-read instead. Deriving
+	// "who can I see" from a single actor's transition gets it wrong the moment two players are
+	// visible and only one of them is lost.
+	RefreshTarget(Stimulus);
+}
+
+void ASomnusZombieAIController::RefreshTarget(const FAIStimulus& Stimulus)
+{
+	// Named Perception rather than PerceptionComponent because AAIController already owns a member
+	// by that name (AIController.h:142) and shadowing it is an error under this project's warning level.
+	UAIPerceptionComponent* Perception = GetPerceptionComponent();
 	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
-	ExecuteTransitionLogic(BlackboardComponent, OldState, NewState);
-	ApplyStateConfig(NewState);
-	
-	CurrentState = NewState;
-	if (BlackboardComponent)
-	{
-		BlackboardComponent->SetValueAsEnum("ZombieState", static_cast<uint8>(NewState));
-	}
-	
-	const bool bStateChanged = (OldState != NewState);
-	const bool bIsImportantReentry = (!bStateChanged && (
-			NewState == EZombieState::Aware || 
-			NewState == EZombieState::Hunt_Certain || 
-			NewState == EZombieState::Hunt_Predict));
-	
-	if (bStateChanged || bIsImportantReentry)
-	{
-		UE_LOG(LogZombieAI, Log, TEXT("[%s] State: %s -> %s | Target : %s | Reason: %s"),
-			  *GetName(),
-			  *UEnum::GetValueAsString(OldState),
-			  *UEnum::GetValueAsString(NewState),
-			  CurrentTarget ? *CurrentTarget->GetName() : TEXT("None"),
-			  *Reason);
-	}
-}
+	if (!Perception || !BlackboardComponent) return;
 
-void ASomnusZombieAIController::ApplyStateConfig(EZombieState NewState)
-{
-	const FZombieStateConfig* Config = StateConfigs.Find(NewState);
-	if (!Config) return;
-	
-	if (ACharacter* ZombieCharacter = Cast<ACharacter>(GetPawn()))
+	TArray<AActor*> Perceived;
+	Perception->GetCurrentlyPerceivedActors(UAISense_Sight::StaticClass(), Perceived);
+
+	// An empty filter passes everything on purpose: a controller nobody configured senses too much
+	// rather than going silently blind, which is the failure that is actually hard to spot.
+	if (DetectClassFilter)
 	{
-		if (UCharacterMovementComponent* Move = ZombieCharacter->GetCharacterMovement())
+		Perceived.RemoveAll([this](const AActor* Candidate)
 		{
-			Move->MaxWalkSpeed = Config->MovementSpeed;
+			return !Candidate->IsA(DetectClassFilter);
+		});
+	}
+
+	FTimerManager& TimerManager = GetWorldTimerManager();
+	const UObject* CurrentTarget = BlackboardComponent->GetValueAsObject(TargetActorKeyName);
+
+	if (!Perceived.IsEmpty())
+	{
+		TimerManager.ClearTimer(GraceTimerHandle);
+
+		// Sticky: a target that is still visible is never traded for a closer one. Re-picking on
+		// every update makes a zombie oscillate between two players standing at similar distances.
+		if (!Perceived.Contains(CurrentTarget))
+		{
+			BlackboardComponent->SetValueAsObject(TargetActorKeyName, SelectTarget(Perceived));
 		}
+		return;
+	}
+
+	// Nothing in sight. The target is deliberately left set until the grace timer expires - that
+	// window is what absorbs a pillar clipping the line of sight for a moment, and it is the only
+	// reason the chase does not stop dead on the frame sight breaks.
+	if (!CurrentTarget || TimerManager.IsTimerActive(GraceTimerHandle))
+	{
+		return;
+	}
+
+	// Because a target leaving the set is re-selected immediately above, the set can only empty on
+	// the loss of the current target - which is what makes this stimulus the right one to remember.
+	if (FAISystem::IsValidLocation(Stimulus.StimulusLocation))
+	{
+		CachedLostLocation = Stimulus.StimulusLocation;
+	}
+
+	// FTimerManager treats a non-positive rate as a request to clear (TimerManager.cpp:617), so a
+	// zero grace would leave the target latched forever instead of releasing it at once.
+	if (GraceTime > 0.0f)
+	{
+		TimerManager.SetTimer(GraceTimerHandle, this,
+			&ASomnusZombieAIController::OnGraceExpired, GraceTime, false);
+	}
+	else
+	{
+		OnGraceExpired();
 	}
 }
 
-void ASomnusZombieAIController::OnAwareDurationExpired()
+AActor* ASomnusZombieAIController::SelectTarget(const TArray<AActor*>& Candidates) const
 {
-	SetState(EZombieState::Unaware);
+	// Co-op will want nearest, or threat once damage can vote. Stickiness lives in the caller, so
+	// this only ever runs when there is no target to keep.
+	return Candidates.IsEmpty() ? nullptr : Candidates[0];
 }
 
-void ASomnusZombieAIController::OnGraceDurationExpired()
+void ASomnusZombieAIController::OnGraceExpired()
 {
-	SetState(EZombieState::Hunt_Predict);
-}
+	UBlackboardComponent* BlackboardComponent = GetBlackboardComponent();
+	if (!BlackboardComponent) return;
 
+	// Order matters. Clearing the target is what aborts the chase branch, so the search branch has
+	// to already have somewhere to go by the time it starts running.
+	BlackboardComponent->SetValueAsVector(LastKnownLocationKeyName, CachedLostLocation);
+	BlackboardComponent->SetValueAsBool(HasReactedKeyName, false);
+	BlackboardComponent->ClearValue(TargetActorKeyName);
+
+	if (bLogSightEvents)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[Zombie] target released, searching from %s"),
+			*CachedLostLocation.ToCompactString());
+	}
+}
