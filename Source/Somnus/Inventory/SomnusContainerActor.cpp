@@ -44,6 +44,20 @@ void ASomnusContainerActor::GetLifetimeReplicatedProps(TArray<class FLifetimePro
 	DOREPLIFETIME(ASomnusContainerActor, Compartments);
 }
 
+AActor* ASomnusContainerActor::ResolveRootHolder(AActor* Actor)
+{
+	while (ASomnusContainerActor* AsContainer = Cast<ASomnusContainerActor>(Actor))
+	{
+		AActor* NextOwner = AsContainer->GetOwner();
+		if (!NextOwner)
+		{
+			break;
+		}
+		Actor = NextOwner;
+	}
+	return Actor;
+}
+
 // Called when the game starts or when spawned
 void ASomnusContainerActor::BeginPlay()
 {

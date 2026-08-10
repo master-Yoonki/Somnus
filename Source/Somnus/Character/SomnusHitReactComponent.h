@@ -11,9 +11,28 @@ USTRUCT()
 struct FBoneHitReactProcessingData
 {
 	GENERATED_BODY()
-	
+
 	float ProcessingTime = 0.f;
 	FTimerHandle DelayTimer;
+};
+
+/**
+ * How the skeleton is currently driven. Drives, body movement type, gravity and the constraint
+ * profile have to agree with each other - a body left simulating while a drive still pulls it back
+ * to the animated pose looks frozen rather than physical. Naming the combinations is what keeps
+ * an inconsistent one from being reachable.
+ */
+UENUM(BlueprintType)
+enum class ESomnusPhysicsPose : uint8
+{
+	/** Animation owns the pose; bodies are kinematic. */
+	Animated,
+	/** Flinch that keeps its feet - world-space drives, feet pinned, no gravity. */
+	Braced,
+	/** Knocked around, but parent-space drives still pull it back toward the pose. */
+	Reeling,
+	/** Nothing pulls it back. A corpse. */
+	Limp
 };
 
 UCLASS( ClassGroup=(Somnus), meta=(BlueprintSpawnableComponent) )
@@ -29,14 +48,17 @@ public:
 	// Applies a physics impulse at the given bone/location. Impulse carries both
 	// direction and magnitude (composed upstream from the strike velocity).
 	void HitReaction(FName BoneName, const FVector& Location, const FVector& Impulse);
+
+	/** The single way the skeleton's physics state changes. Callers name the pose they want and
+	 *  every value that has to agree is written here, so no half-applied combination exists. */
+	UFUNCTION(BlueprintCallable, Category = "HitReact")
+	void SetPhysicsPose(ESomnusPhysicsPose Pose);
+
+	ESomnusPhysicsPose GetPhysicsPose() const { return CurrentPose; }
+
 protected:
-	// Hands the skeleton back to pure animation once every bone has recovered.
-	void StopPhysicalAnimProcessing();
-	
-	// Sets up physics as we transition into a new hit. This depends on whether we will ragdoll or not.
-	void SetupPhysicsForHit(bool bIsRagdoll);
-	// Sets the ABP to animate depending on whether we are ragdolling
-	void SetAnimation(bool bIsRagdoll);
+	// Sets the ABP to animate depending on the pose
+	void SetAnimation(ESomnusPhysicsPose Pose);
 	// Fired when a bone's delay timer elapses; payload (bone + impulse) is captured at bind time.
 	void ApplyDelayedImpulse(FName BoneName, FVector Location, FVector Impulse);
 	
@@ -92,6 +114,9 @@ protected:
 	FPhysicsControlNames AllBodyModifiers;
 	FPhysicsControlNames AllParentSpaceControls;
 	FPhysicsControlNames AllWorldSpaceControls;
-	
+
+	UPROPERTY(VisibleInstanceOnly, Category = "HitReact")
+	ESomnusPhysicsPose CurrentPose = ESomnusPhysicsPose::Animated;
+
 	bool IsAnyBoneProcessing = false;
 };

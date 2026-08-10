@@ -4,6 +4,7 @@
 
 #include "IDetailTreeNode.h"
 #include "SomnusContainerActor.h"
+#include "SomnusLootComponent.h"
 #include "Net/UnrealNetwork.h"
 
 #include "Inventory/SomnusContainerDataAsset.h"
@@ -552,25 +553,6 @@ void USomnusInventoryComponent::Server_TryMoveItem_Implementation(FGuid Instance
 	TryMoveItem(InstanceID, NewTopLeftX, NewTopLeftY, bNewRotated);
 }
 
-/** Resolves the actor a piece of storage ultimately belongs to, so a moved container can
- *  inherit it. Compartments live on container actors, which are themselves owned by whoever
- *  holds them, so this collapses that chain down to the character (or pickup actor) at its
- *  root. Stops at the first link with no owner, which is still the right answer - that link
- *  becomes the owner and the chain repairs itself when it gets one. */
-static AActor* SomnusInventory_ResolveRootHolder(AActor* Actor)
-{
-	while (ASomnusContainerActor* AsContainer = Cast<ASomnusContainerActor>(Actor))
-	{
-		AActor* NextOwner = AsContainer->GetOwner();
-		if (!NextOwner)
-		{
-			break;
-		}
-		Actor = NextOwner;
-	}
-	return Actor;
-}
-
 bool USomnusInventoryComponent::MoveItemFrom(USomnusInventoryComponent* Source, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated)
 {
 	AActor* OwnerActor = GetOwner();
@@ -632,13 +614,25 @@ bool USomnusInventoryComponent::MoveItemFrom(USomnusInventoryComponent* Source, 
 	// corpses and world containers are lootable.
 	if (Moving.ContainerActor)
 	{
-		Moving.ContainerActor->SetOwner(SomnusInventory_ResolveRootHolder(OwnerActor));
+		Moving.ContainerActor->SetOwner(ASomnusContainerActor::ResolveRootHolder(OwnerActor));
 	}
 	return true;
 }
 
 void USomnusInventoryComponent::Server_MoveItemFrom_Implementation(USomnusInventoryComponent* Source, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated)
 {
+	// RPC routing already establishes that the caller owns the destination. Source is the one
+	// thing the client names freely, and so the one thing that has to be earned - without this a
+	// client could name a living player's backpack and be obeyed. Asked of a component rather
+	// than a class so that being able to search is a capability, not a species; fails closed,
+	// since storage whose holder has no loot component never opened a session to begin with.
+	AActor* Holder = ASomnusContainerActor::ResolveRootHolder(GetOwner());
+	const USomnusLootComponent* Requester = Holder ? Holder->FindComponentByClass<USomnusLootComponent>() : nullptr;
+	if (!Requester || !Requester->CanAccessContainer(Source))
+	{
+		return;
+	}
+
 	MoveItemFrom(Source, InstanceID, TopLeftX, TopLeftY, bRotated);
 }
 

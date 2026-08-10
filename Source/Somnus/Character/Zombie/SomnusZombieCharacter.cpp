@@ -148,8 +148,11 @@ void ASomnusZombieCharacter::MulticastZombieDeath_Implementation()
 	GetCharacterMovement()->SetMovementMode(MOVE_None);
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetMesh()->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-	GetMesh()->SetCollisionProfileName(TEXT("Ragdoll"));
-	GetMesh()->SetAllBodiesSimulatePhysics(true);
-	GetMesh()->SetSimulatePhysics(true);
-	GetMesh()->WakeAllRigidBodies();
+
+	// Same reason as the player: the hit react component owns the physics control body modifiers
+	// and reasserts the movement type, so the mesh cannot be made to simulate behind its back.
+	if (HitReact)
+	{
+		HitReact->SetPhysicsPose(ESomnusPhysicsPose::Limp);
+	}
 }

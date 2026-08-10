@@ -18,6 +18,13 @@ public:
 	ASomnusContainerActor();
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Container")
 	void Initialize(class USomnusContainerDataAsset* ContainerDataAsset);
+
+	/** Collapses a chain of container actors down to whatever is holding it - a character, a
+	 *  pickup. Containers nest (a backpack inside a rig), and each link owns the next, so the
+	 *  question "whose is this" only has an answer at the root. Stops at the first link with no
+	 *  owner, which is still correct: that link becomes the root and the chain repairs itself
+	 *  once it gets one. */
+	static AActor* ResolveRootHolder(AActor* Actor);
 	
 	UFUNCTION(BlueprintPure, Category = "Container")
 	TArray<USomnusInventoryComponent*> GetCompartments() const

@@ -5,6 +5,8 @@
 
 #include "GameFramework/Character.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Core/SomnusCollisionChannels.h"
 #include "TimerManager.h"
 
 USomnusHitReactComponent::USomnusHitReactComponent()
@@ -223,14 +225,9 @@ void USomnusHitReactComponent::TickComponent(float DeltaTime, enum ELevelTick Ti
 	
 	for (const FName& BoneToDelete : HitReactBoneToDelete)
 	{
-		// Only this bone's bodies revert to kinematic - other bones may still have
-		// hits in flight, and StopPhysicalAnimProcessing() (below) handles the
-		// whole-body revert once every bone has finished.
-		bool bIsRagdoll = false;
-		if (!bIsRagdoll)
-		{
-			PhysicsControlComponent->SetBodyModifiersMovementType({BoneToDelete}, EPhysicsMovementType::Kinematic);
-		}
+		// Only this bone's bodies revert to kinematic - other bones may still have hits in flight,
+		// and the whole-body revert below handles it once every bone has finished.
+		PhysicsControlComponent->SetBodyModifiersMovementType({BoneToDelete}, EPhysicsMovementType::Kinematic);
 
 		BoneHitReactProcessingData.Remove(BoneToDelete);
 	}
@@ -239,7 +236,8 @@ void USomnusHitReactComponent::TickComponent(float DeltaTime, enum ELevelTick Ti
 	if (!IsAnyBoneProcessing)
 	{
 		// No bone is reacting anymore: hand the skeleton back to pure animation, then stop ticking.
-		StopPhysicalAnimProcessing();
+		// A corpse ignores this - Limp is terminal.
+		SetPhysicsPose(ESomnusPhysicsPose::Animated);
 		SetComponentTickEnabled(false);
 	}
 }
@@ -252,41 +250,70 @@ void USomnusHitReactComponent::HitReaction(FName BoneName, const FVector& Locati
 	}
 }
 
-void USomnusHitReactComponent::SetupPhysicsForHit(bool bIsRagdoll)
+void USomnusHitReactComponent::SetPhysicsPose(ESomnusPhysicsPose Pose)
 {
-	SetAnimation(bIsRagdoll);
-	PhysicsControlComponent->SetBodyModifiersInSetMovementType(FName("All"), EPhysicsMovementType::Simulated);
-	if (bIsRagdoll)
+	if (!SkeletalMeshComponent || !PhysicsControlComponent) return;
+
+	// Limp is terminal: a body that has gone slack does not get pulled upright again by a hit
+	// landing on the corpse, or by the recovery tick finishing off a hit that was already in
+	// flight when it died. A get-up animation would need an explicit way out of this.
+	if (CurrentPose == ESomnusPhysicsPose::Limp) return;
+
+	CurrentPose = Pose;
+	SetAnimation(Pose);
+
+	switch (Pose)
 	{
-		SkeletalMeshComponent->SetConstraintProfileForAll(NAME_None, true);
-		PhysicsControlComponent->SetBodyModifiersInSetGravityMultiplier(FName("All"), 1.f);
+	case ESomnusPhysicsPose::Animated:
 		PhysicsControlComponent->SetControlsInSetEnabled(FName("WorldSpace"), false);
-		PhysicsControlComponent->SetControlsInSetEnabled(FName("ParentSpace"), true);
-	}
-	else
-	{
+		PhysicsControlComponent->SetControlsInSetEnabled(FName("ParentSpace"), false);
+		PhysicsControlComponent->SetBodyModifiersInSetMovementType(FName("All"), EPhysicsMovementType::Kinematic);
+		break;
+
+	case ESomnusPhysicsPose::Braced:
 		SkeletalMeshComponent->SetConstraintProfileForAll(FName("RagdollNoDrives"), false);
+		PhysicsControlComponent->SetBodyModifiersInSetMovementType(FName("All"), EPhysicsMovementType::Simulated);
 		PhysicsControlComponent->SetBodyModifiersInSetGravityMultiplier(FName("All"), 0.f);
+		// Pinning the feet is what keeps a flinch from turning into a fall.
 		PhysicsControlComponent->SetBodyModifiersInSetMovementType(FName("Feet"), EPhysicsMovementType::Kinematic);
 		PhysicsControlComponent->SetControlsInSetEnabled(FName("WorldSpace"), true);
 		PhysicsControlComponent->SetControlsInSetEnabled(FName("ParentSpace"), false);
+		break;
+
+	case ESomnusPhysicsPose::Reeling:
+		SkeletalMeshComponent->SetConstraintProfileForAll(NAME_None, true);
+		PhysicsControlComponent->SetBodyModifiersInSetMovementType(FName("All"), EPhysicsMovementType::Simulated);
+		PhysicsControlComponent->SetBodyModifiersInSetGravityMultiplier(FName("All"), 1.f);
+		PhysicsControlComponent->SetControlsInSetEnabled(FName("WorldSpace"), false);
+		PhysicsControlComponent->SetControlsInSetEnabled(FName("ParentSpace"), true);
+		break;
+
+	case ESomnusPhysicsPose::Limp:
+		SkeletalMeshComponent->SetConstraintProfileForAll(NAME_None, true);
+		PhysicsControlComponent->SetBodyModifiersInSetMovementType(FName("All"), EPhysicsMovementType::Simulated);
+		PhysicsControlComponent->SetBodyModifiersInSetGravityMultiplier(FName("All"), 1.f);
+		// The whole point: no drive of any kind is left to pull the skeleton back to a pose.
+		PhysicsControlComponent->SetControlsInSetEnabled(FName("WorldSpace"), false);
+		PhysicsControlComponent->SetControlsInSetEnabled(FName("ParentSpace"), false);
+
+		// Collision moves with the pose because it is part of being a body rather than a character:
+		// the capsule stops standing in for it, so the mesh has to answer traces itself. Ragdoll is
+		// an engine preset and knows nothing of our channels, hence the explicit response.
+		SkeletalMeshComponent->SetCollisionProfileName(TEXT("Ragdoll"));
+		SkeletalMeshComponent->SetCollisionResponseToChannel(SomnusCollision::Interaction, ECR_Block);
+		SkeletalMeshComponent->WakeAllRigidBodies();
+
+		// Nothing recovers from here, so the recovery tick has no work left.
+		BoneHitReactProcessingData.Empty();
+		IsAnyBoneProcessing = false;
+		SetComponentTickEnabled(false);
+		break;
 	}
 }
 
-void USomnusHitReactComponent::SetAnimation(bool bIsRagdoll)
+void USomnusHitReactComponent::SetAnimation(ESomnusPhysicsPose Pose)
 {
-	// TODO: Just send abp use ragdoll
-	// ABP = Cast<>SkeletalMeshComponent;
-	// ABP->HitReaction = bIsRagdoll;
-}
-
-void USomnusHitReactComponent::StopPhysicalAnimProcessing()
-{
-	// Inverse of SetupPhysicsForHit: drop all physical drive and return to animation.
-	SetAnimation(false);
-	PhysicsControlComponent->SetControlsInSetEnabled(FName("WorldSpace"), false);
-	PhysicsControlComponent->SetControlsInSetEnabled(FName("ParentSpace"), false);
-	PhysicsControlComponent->SetBodyModifiersInSetMovementType(FName("All"), EPhysicsMovementType::Kinematic);
+	// TODO: tell the ABP which pose is driving the skeleton
 }
 
 void USomnusHitReactComponent::MulticastHitReaction_Implementation(FName BoneName, const FVector& Location,
@@ -309,8 +336,7 @@ void USomnusHitReactComponent::MulticastHitReaction_Implementation(FName BoneNam
 	GetWorld()->GetTimerManager().SetTimer(
 		NewRecord.DelayTimer, DelayDelegate, ImpuseApplyDelay, /*bLoop=*/false);
 
-	bool bIsRagdoll = false;
-	SetupPhysicsForHit(bIsRagdoll);
+	SetPhysicsPose(ESomnusPhysicsPose::Braced);
 }
 
 void USomnusHitReactComponent::ApplyDelayedImpulse(FName BoneName, FVector Location, FVector Impulse)

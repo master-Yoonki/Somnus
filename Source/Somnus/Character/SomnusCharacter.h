@@ -8,6 +8,7 @@
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
 #include "Core/SomnusStrikeSource.h"
+#include "Core/SomnusInteractable.h"
 #include "SomnusCharacter.generated.h"
 
 class ASomnusWeapon;
@@ -22,7 +23,7 @@ enum class ESomnusGait : uint8;
  * Acts as the physical avatar for the GAS component stored in the PlayerState.
  */
 UCLASS()
-class SOMNUS_API ASomnusCharacter : public ACharacter, public IAbilitySystemInterface, public ISomnusStrikeSource
+class SOMNUS_API ASomnusCharacter : public ACharacter, public IAbilitySystemInterface, public ISomnusStrikeSource, public ISomnusInteractable
 {
 	GENERATED_BODY()
 
@@ -97,6 +98,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "EquipmentComponent", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class USomnusContainerEquipComponent> ContainerEquipmentComponent;
 
+	// Which grids this character may reach into beyond its own - i.e. the body it has open.
+	// A C++ subobject rather than a Blueprint-added component because Server_MoveItemFrom fails
+	// closed on its absence: a character missing it could not move items even within itself.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Loot", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class USomnusLootComponent> LootComponent;
+
 	// Physics-based flinch on non-lethal hits
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HitReact", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class USomnusHitReactComponent> HitReact;
@@ -125,6 +132,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "GAS")
 	bool IsDead() const;
 
+protected:
+	/** Set on death and never cleared. The ability system lives on the PlayerState, which
+	 *  unpossessing hands to the next pawn - a corpse asked through the ASC alone would answer
+	 *  that it is alive, and so would a character placed in the level that never had one. */
+	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "GAS")
+	bool bDead = false;
+
+public:
+
 	// Blueprint event fired on the owning client when this character dies (for death UI)
 	UFUNCTION(BlueprintImplementableEvent, Category = "GAS")
 	void OnDeath();
@@ -139,7 +155,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	TArray<struct FSomnusActiveContainerInfo> GetActiveContainers() const;
-	
+
+	/** ISomnusInteractable. A body hands its searcher over to their own loot component; a living
+	 *  character offers nothing. Whether the searcher may then reach any particular grid is that
+	 *  component's question, not this one's. */
+	virtual void Interact_Implementation(AActor* Interactor) override;
+
 	// Switch weapon slot: 0 = unarmed, 1+ = weapon index in WeaponClasses.
 	// Safe to call from client — routes to ServerSwitchWeapon.
 	UFUNCTION(BlueprintCallable, Category = "Weapon")

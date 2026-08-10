@@ -7,6 +7,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "Input/SomnusInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "AbilitySystem/Attributes/SomnusAttributeSet.h"
@@ -24,6 +25,7 @@
 #include "Inventory/SomnusItemTypes.h"
 #include "Inventory/SomnusItemDataAsset.h"
 #include "Inventory/SomnusContainerEquipComponent.h"
+#include "Inventory/SomnusLootComponent.h"
 #include "EngineUtils.h"
 #include "Core/SomnusInteractable.h"
 #include "Core/SomnusCollisionChannels.h"
@@ -59,6 +61,8 @@ ASomnusCharacter::ASomnusCharacter()
 	FollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm
 
 	ContainerEquipmentComponent = CreateDefaultSubobject<USomnusContainerEquipComponent>(TEXT("ContainerEquip"));
+
+	LootComponent = CreateDefaultSubobject<USomnusLootComponent>(TEXT("Loot"));
 
 	HitReact = CreateDefaultSubobject<USomnusHitReactComponent>(TEXT("HitReact"));
 
@@ -155,6 +159,7 @@ void ASomnusCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ASomnusCharacter, WeaponInventory);
 	DOREPLIFETIME(ASomnusCharacter, EquippedWeapon);
+	DOREPLIFETIME(ASomnusCharacter, bDead);
 }
 
 TArray<FSomnusStrikeSourceInfo> ASomnusCharacter::GetStrikeSources() const
@@ -330,6 +335,20 @@ void ASomnusCharacter::Server_Interact_Implementation()
 	}
 }
 
+void ASomnusCharacter::Interact_Implementation(AActor* Interactor)
+{
+	// Reached only on the server - Server_Interact owns the trace. A living character being
+	// interacted with is not an error, it simply has nothing to offer.
+	if (!IsDead() || !Interactor || Interactor == this) return;
+
+	// Asking for the component rather than casting to a character is what lets anything that can
+	// carry storage do the searching later, without this line changing.
+	if (USomnusLootComponent* SearcherLoot = Interactor->FindComponentByClass<USomnusLootComponent>())
+	{
+		SearcherLoot->OpenLoot(this);
+	}
+}
+
 void ASomnusCharacter::Move(const FInputActionValue& Value)
 {
 	// If in a movement-cancellable window, cancel melee abilities
@@ -454,29 +473,42 @@ void ASomnusCharacter::AddInputMappingContext() const
 
 void ASomnusCharacter::Die(const FVector& HitDirection)
 {
-	if (IsDead()) return;
+	// Death is a server decision, and bDead is replicated - a client must never set it locally.
+	if (!HasAuthority() || IsDead()) return;
 
-	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
-	if (!ASC) return;
-	
+	// Set before anything that could bail out. Whether this body is a corpse must not depend on
+	// whether there happened to be an ability system left to clean up.
+	bDead = true;
+
+	// A looter who dies stops looting. Being looted is unaffected - that session belongs to
+	// whoever opened this body, and their component keeps re-checking it from their side.
+	if (LootComponent)
+	{
+		LootComponent->Server_CloseLoot_Implementation();
+	}
+
 	if (GetEquippedWeapon())
 	{
 		GetEquippedWeapon()->Unequip();
 	}
 
-	// --- Server-only GAS logic ---
-	// 1. Cancel all active abilities
-	ASC->CancelAllAbilities();
+	// Only clean up an ability system that exists. It lives on the PlayerState, which a character
+	// placed in the level never had and an unpossessed corpse no longer has.
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		ASC->CancelAllAbilities();
 
-	// 2. Remove effects tagged with Effect.RemoveOnDeath (regen, buffs, etc.)
-	FGameplayTagContainer EffectTagsToRemove;
-	EffectTagsToRemove.AddTag(SomnusTags::Effect_RemoveOnDeath);
-	ASC->RemoveActiveEffectsWithGrantedTags(EffectTagsToRemove);
+		// Regen, buffs and anything else that has no business ticking on a body.
+		FGameplayTagContainer EffectTagsToRemove;
+		EffectTagsToRemove.AddTag(SomnusTags::Effect_RemoveOnDeath);
+		ASC->RemoveActiveEffectsWithGrantedTags(EffectTagsToRemove);
 
-	// 3. Add the dead state tag
-	ASC->AddLooseGameplayTag(SomnusTags::State_Dead, 1, EGameplayTagReplicationState::TagOnly);
+		// Kept alongside bDead rather than replaced by it: the tag is what blocks abilities while
+		// the ability system is still attached, which is a different question from "is this a corpse".
+		ASC->AddLooseGameplayTag(SomnusTags::State_Dead, 1, EGameplayTagReplicationState::TagOnly);
+	}
 
-	// 4. Multicast visual death (ragdoll, impulse, UI) to all machines
+	// Outside the block on purpose - the ragdoll has to happen either way.
 	MulticastDeath(HitDirection);
 }
 
@@ -486,12 +518,15 @@ void ASomnusCharacter::MulticastDeath_Implementation(const FVector& HitDirection
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetCharacterMovement()->SetMovementMode(MOVE_None);
 
-	// Ragdoll the skeletal mesh
 	GetMesh()->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-	GetMesh()->SetCollisionProfileName(TEXT("Ragdoll"));
-	GetMesh()->SetAllBodiesSimulatePhysics(true);
-	GetMesh()->SetSimulatePhysics(true);
-	GetMesh()->WakeAllRigidBodies();
+
+	// Going slack goes through the hit react component rather than the mesh directly: it owns the
+	// physics control body modifiers, and those reassert the movement type. Setting bodies to
+	// simulate behind its back leaves them kinematic, which reads on screen as a frozen pose.
+	if (HitReact)
+	{
+		HitReact->SetPhysicsPose(ESomnusPhysicsPose::Limp);
+	}
 
 	// Apply impulse in the hit direction
 	if (!HitDirection.IsNearlyZero())
@@ -499,8 +534,11 @@ void ASomnusCharacter::MulticastDeath_Implementation(const FVector& HitDirection
 		GetMesh()->AddImpulse(HitDirection * 1500.0f, NAME_None, true);
 	}
 
-	// Notify Blueprint for death UI (owning client only)
-	if (IsLocallyControlled())
+	// Notify Blueprint for death UI (owning client only). The controller has to be a player
+	// controller, not merely a local one: IsLocalController() is unconditionally true in
+	// standalone (Controller.cpp:90), so an AI-possessed body would put a death screen on the
+	// local player's viewport.
+	if (const APlayerController* PC = Cast<APlayerController>(GetController()); PC && PC->IsLocalController())
 	{
 		OnDeath();
 	}
@@ -508,6 +546,10 @@ void ASomnusCharacter::MulticastDeath_Implementation(const FVector& HitDirection
 
 bool ASomnusCharacter::IsDead() const
 {
+	// bDead is checked first because an unpossessed corpse has no PlayerState, and therefore no
+	// ability system to ask.
+	if (bDead) return true;
+
 	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
 	return ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Dead);
 }

@@ -20,4 +20,19 @@ public:
 
 	// Called by the character when the player requests to respawn (e.g., presses any button while dead)
 	void RequestRespawn(AController* Controller);
+
+	/** Takes over a body's lifetime so it can be looted. Once the budget is exceeded the oldest
+	 *  corpse is destroyed, which is why this is here rather than a lifespan on the pawn: the cap
+	 *  is a property of the match, not of any one body. Takes APawn so zombies use it unchanged. */
+	void RegisterCorpse(APawn* Corpse);
+
+protected:
+	/** How many bodies may exist at once. */
+	UPROPERTY(EditDefaultsOnly, Category = "Corpses", meta = (ClampMin = "1"))
+	int32 MaxCorpses = 16;
+
+private:
+	/** Oldest first. */
+	UPROPERTY()
+	TArray<TObjectPtr<APawn>> Corpses;
 };
