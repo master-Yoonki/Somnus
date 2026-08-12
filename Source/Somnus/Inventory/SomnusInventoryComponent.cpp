@@ -4,7 +4,6 @@
 
 #include "IDetailTreeNode.h"
 #include "SomnusContainerActor.h"
-#include "SomnusLootComponent.h"
 #include "Net/UnrealNetwork.h"
 
 #include "Inventory/SomnusContainerDataAsset.h"
@@ -220,6 +219,11 @@ static bool SomnusInventory_IsInsideContainer(const USomnusInventoryComponent* G
 bool USomnusInventoryComponent::IsInsideContainer(const USomnusInventoryComponent* Grid, const ASomnusContainerActor* MovingContainer)
 {
 	return SomnusInventory_IsInsideContainer(Grid, MovingContainer);
+}
+
+AActor* USomnusInventoryComponent::GetHoldingActor() const
+{
+	return ASomnusContainerActor::ResolveRootHolder(GetOwner());
 }
 
 int32 USomnusInventoryComponent::AddExistingItemAnywhere(FSomnusItemInstance& IncomingItemInstance)
@@ -443,21 +447,6 @@ bool USomnusInventoryComponent::RemoveItem(FGuid InstanceID)
 	return false;
 }
 
-void USomnusInventoryComponent::Server_AddItemAnywhere_Implementation(USomnusItemDataAsset* ItemData, int32 Quantity)
-{
-	AddItemAnywhere(ItemData, Quantity);
-}
-
-void USomnusInventoryComponent::Server_AddItemAt_Implementation(USomnusItemDataAsset* ItemData, int32 Quantity, int32 TopLeftX, int32 TopLeftY, bool bRotated)
-{
-	AddItemAt(ItemData, Quantity, TopLeftX, TopLeftY, bRotated);
-}
-
-void USomnusInventoryComponent::Server_RemoveItem_Implementation(FGuid InstanceID)
-{
-	RemoveItem(InstanceID);
-}
-
 bool USomnusInventoryComponent::TryMoveItem(FGuid InstanceID, int32 NewTopLeftX, int32 NewTopLeftY, bool bNewRotated)
 {
 	// 1. Authority Check
@@ -548,11 +537,6 @@ bool USomnusInventoryComponent::TryMoveItem(FGuid InstanceID, int32 NewTopLeftX,
 	return false;
 }
 
-void USomnusInventoryComponent::Server_TryMoveItem_Implementation(FGuid InstanceID, int32 NewTopLeftX, int32 NewTopLeftY, bool bNewRotated)
-{
-	TryMoveItem(InstanceID, NewTopLeftX, NewTopLeftY, bNewRotated);
-}
-
 bool USomnusInventoryComponent::MoveItemFrom(USomnusInventoryComponent* Source, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated)
 {
 	AActor* OwnerActor = GetOwner();
@@ -609,31 +593,14 @@ bool USomnusInventoryComponent::MoveItemFrom(USomnusInventoryComponent* Source, 
 		Source->OnItemChanged(*Remainder);
 	}
 
-	// Storage follows its holder so client RPCs keep routing and relevancy keeps resolving.
-	// Source and destination sit on the same character today; they stop doing so as soon as
-	// corpses and world containers are lootable.
+	// Storage follows its holder so relevancy keeps resolving and permission keeps answering:
+	// the owner chain is what both read. Source and destination sit on different bodies as soon
+	// as anything is looted, which is exactly when this line stops being a formality.
 	if (Moving.ContainerActor)
 	{
 		Moving.ContainerActor->SetOwner(ASomnusContainerActor::ResolveRootHolder(OwnerActor));
 	}
 	return true;
-}
-
-void USomnusInventoryComponent::Server_MoveItemFrom_Implementation(USomnusInventoryComponent* Source, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated)
-{
-	// RPC routing already establishes that the caller owns the destination. Source is the one
-	// thing the client names freely, and so the one thing that has to be earned - without this a
-	// client could name a living player's backpack and be obeyed. Asked of a component rather
-	// than a class so that being able to search is a capability, not a species; fails closed,
-	// since storage whose holder has no loot component never opened a session to begin with.
-	AActor* Holder = ASomnusContainerActor::ResolveRootHolder(GetOwner());
-	const USomnusLootComponent* Requester = Holder ? Holder->FindComponentByClass<USomnusLootComponent>() : nullptr;
-	if (!Requester || !Requester->CanAccessContainer(Source))
-	{
-		return;
-	}
-
-	MoveItemFrom(Source, InstanceID, TopLeftX, TopLeftY, bRotated);
 }
 
 

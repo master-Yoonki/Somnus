@@ -98,9 +98,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "EquipmentComponent", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class USomnusContainerEquipComponent> ContainerEquipmentComponent;
 
-	// Which grids this character may reach into beyond its own - i.e. the body it has open.
-	// A C++ subobject rather than a Blueprint-added component because Server_MoveItemFrom fails
-	// closed on its absence: a character missing it could not move items even within itself.
+	// Which grids this character may reach into, its own included - i.e. the body it has open.
+	// A C++ subobject rather than a Blueprint-added component because every client entry point
+	// into storage now routes through it: a character missing it could not move items at all.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Loot", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class USomnusLootComponent> LootComponent;
 

@@ -27,6 +27,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Loot")
 	AActor* GetLootTarget() const { return LootTarget; }
 
+	/** The question every reach across bodies actually asks: its owner's own storage always, and
+	 *  the one body it has open for as long as it stays beside it. Everything else - grids, worn
+	 *  storage, whatever comes later - reduces to this, so the rule is written down once here. */
+	bool CanAccessHolder(const AActor* Holder) const;
+
 	/** Whether the owner may take from Container right now. */
 	bool CanAccessContainer(const class USomnusInventoryComponent* Container) const;
 
@@ -36,7 +41,19 @@ public:
 	 *  inventory widget, which is somewhere else entirely. */
 	UPROPERTY(BlueprintAssignable, Category = "Loot")
 	FSomnusLootTargetChangedSignature OnLootTargetChanged;
+	
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Loot")
+	void Server_MoveItem(
+		USomnusInventoryComponent* Source, 
+		USomnusInventoryComponent* Dest, 
+		FGuid InstanceID, 
+		int32 TopLeftX, 
+		int32 TopLeftY, 
+		bool bRotated);
 
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Loot")
+	void Server_DropFrom(class USomnusContainerEquipComponent* Source, FGuid InstanceID);
+	
 protected:
 	UPROPERTY(ReplicatedUsing = OnRep_LootTarget)
 	TObjectPtr<AActor> LootTarget;
@@ -46,4 +63,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Loot", meta = (ClampMin = "0.0", Units = "Centimeters"))
 	float LootRange = 400.0f;
+
+private:
+	/** Measured again on every request rather than trusted from the moment the body was opened:
+	 *  a panel left up while its owner walks away must stop being a way in. */
+	bool IsWithinReach(const AActor* Body) const;
 };

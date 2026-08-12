@@ -4,6 +4,7 @@
 #include "Inventory/SomnusLootComponent.h"
 
 #include "SomnusContainerActor.h"
+#include "SomnusContainerEquipComponent.h"
 #include "SomnusInventoryComponent.h"
 #include "Net/UnrealNetwork.h"
 
@@ -26,39 +27,47 @@ void USomnusLootComponent::GetLifetimeReplicatedProps(TArray<class FLifetimeProp
 void USomnusLootComponent::OpenLoot(AActor* Body)
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
-	if (!Body) return;
-	
-	FVector RootLocation = GetOwner()->GetActorLocation();
-	FVector BodyLocation = Body->GetActorLocation();
-	
-	if (FVector::DistSquared(RootLocation, BodyLocation) < FMath::Square(LootRange))
-	{
-		LootTarget = Body;
-		OnRep_LootTarget();
-	}
+	if (!IsWithinReach(Body)) return;
+
+	LootTarget = Body;
+	OnRep_LootTarget();
+}
+
+bool USomnusLootComponent::IsWithinReach(const AActor* Body) const
+{
+	if (!Body || !GetOwner()) return false;
+
+	return FVector::DistSquared(GetOwner()->GetActorLocation(), Body->GetActorLocation())
+		< FMath::Square(LootRange);
+}
+
+bool USomnusLootComponent::CanAccessHolder(const AActor* Holder) const
+{
+	if (!Holder || !GetOwner()) return false;
+
+	if (Holder == GetOwner()) return true;
+	if (Holder == LootTarget) return IsWithinReach(Holder);
+
+	return false;
 }
 
 bool USomnusLootComponent::CanAccessContainer(const class USomnusInventoryComponent* Container) const
 {
-	if (!Container) return false;
-	AActor* RootHolder = ASomnusContainerActor::ResolveRootHolder(Container->GetOwner());
-	if (!RootHolder) return false;
+	// A grid answers for whoever is ultimately holding it, which is the only level the question
+	// has an answer at - containers nest, and each link owns the next.
+	return Container && CanAccessHolder(ASomnusContainerActor::ResolveRootHolder(Container->GetOwner()));
+}
+
+void USomnusLootComponent::Server_MoveItem_Implementation(USomnusInventoryComponent* Source,
+	USomnusInventoryComponent* Dest, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+	if (!Source || !Dest) return;
 	
-	if (RootHolder == GetOwner())
-	{
-		return true;
-	}
-	if (RootHolder == LootTarget)
-	{
-		FVector RootLocation = GetOwner()->GetActorLocation();
-		FVector BodyLocation = RootHolder->GetActorLocation();
+	if (!CanAccessContainer(Source)) return;
+	if (!CanAccessContainer(Dest)) return;
 	
-		if (FVector::DistSquared(RootLocation, BodyLocation) < FMath::Square(LootRange))
-		{
-			return true;
-		}
-	}
-	return false;
+	Dest->MoveItemFrom(Source, InstanceID, TopLeftX, TopLeftY, bRotated);
 }
 
 void USomnusLootComponent::Server_CloseLoot_Implementation()
@@ -66,6 +75,16 @@ void USomnusLootComponent::Server_CloseLoot_Implementation()
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
 	LootTarget = nullptr;
 	OnRep_LootTarget();
+}
+
+void USomnusLootComponent::Server_DropFrom_Implementation(USomnusContainerEquipComponent* Source,
+	FGuid InstanceID)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+	if (!Source || !Source->GetOwner()) return;
+	if (!CanAccessHolder(Source->GetOwner())) return;
+	
+	Source->DropItem(InstanceID);
 }
 
 void USomnusLootComponent::OnRep_LootTarget()

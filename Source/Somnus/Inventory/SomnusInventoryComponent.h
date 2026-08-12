@@ -59,6 +59,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	static bool IsInsideContainer(const USomnusInventoryComponent* Grid, const ASomnusContainerActor* MovingContainer);
 
+	/** The actor ultimately holding this grid - a character, a pickup. Not GetOwner(): containers
+	 *  nest, so a grid inside a backpack answers with whoever is carrying the backpack. Ask per
+	 *  use rather than caching, because that answer changes the moment the backpack changes hands. */
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	AActor* GetHoldingActor() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Grid")
 	void InitializeGridSize(int32 NewX, int32 NewY);
 	
@@ -116,26 +122,9 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
 	bool MoveItemFrom(USomnusInventoryComponent* Source, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated);
 
-	/** Server RPC for adding an item anywhere. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
-	void Server_AddItemAnywhere(class USomnusItemDataAsset* ItemData, int32 Quantity = 1);
-
-	/** Server RPC for adding an item at a specific location. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
-	void Server_AddItemAt(class USomnusItemDataAsset* ItemData, int32 Quantity, int32 TopLeftX, int32 TopLeftY, bool bRotated);
-
-	/** Server RPC for removing an item. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
-	void Server_RemoveItem(FGuid InstanceID);
-
-	/** Server RPC for moving an item. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
-	void Server_TryMoveItem(FGuid InstanceID, int32 NewTopLeftX, int32 NewTopLeftY, bool bNewRotated);
-
-	/** Server RPC for a drag that crossed grids. Call it on the grid that was dropped on;
-	 *  Source is the grid the drag started in. Safe to call when they are the same. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Inventory|RPC")
-	void Server_MoveItemFrom(USomnusInventoryComponent* Source, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated);
+	// No client entry points live here on purpose. A grid is reached through whoever is holding
+	// it - USomnusLootComponent - because a body on the floor has no connection for an RPC to
+	// arrive over, and because a grid cannot tell whether the client naming it is entitled to.
 
 	/** Helper to find an item instance by its unique ID. Public, unlike its mutable counterpart:
 	 *  handing out a read-only view costs nothing, while writing through the other one without

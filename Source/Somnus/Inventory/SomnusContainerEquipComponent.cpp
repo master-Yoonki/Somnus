@@ -542,11 +542,6 @@ bool USomnusContainerEquipComponent::DropItem(FGuid InstanceID)
 	return true;
 }
 
-void USomnusContainerEquipComponent::Server_DropItem_Implementation(FGuid InstanceID)
-{ 
-	DropItem(InstanceID);
-}
-
 void USomnusContainerEquipComponent::Server_UnequipTo_Implementation(EContainerSlotType SlotType,
                                                                      USomnusInventoryComponent* Destination, int32 TopLeftX, int32 TopLeftY, bool bRotated)
 {

@@ -72,12 +72,6 @@ public:
 	 *  Server only. */
 	bool DropItem(FGuid InstanceID);
 
-	/** Server RPC for a drop the player asked for from the UI. Discards the result, like every
-	 *  other inventory RPC: a client learns the outcome from the item leaving its grid, which
-	 *  replication delivers on its own. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Equipment|RPC")
-	void Server_DropItem(FGuid InstanceID);
-
 	/** Mints a new item and spreads it across every container this character can reach, in
 	 *  GetActiveContainers() order, merging into existing stacks everywhere before opening
 	 *  any new cell. Returns the quantity that found no room. Server only. */
