@@ -76,5 +76,20 @@ protected:
 	UFUNCTION(NetMulticast, Reliable)
 	void MulticastZombieDeath();
 
+	/** Set on death and never cleared. Replicated because a body is a state rather than an event:
+	 *  a machine out of relevancy when the multicast went out would otherwise be left with a
+	 *  zombie standing up and playing its idle for as long as the corpse lasts. */
+	UPROPERTY(ReplicatedUsing = OnRep_Dead, VisibleInstanceOnly, BlueprintReadOnly, Category = "GAS")
+	bool bDead = false;
+
+	UFUNCTION()
+	void OnRep_Dead();
+
+	/** Everything about being a corpse that has to hold on every machine. Idempotent: it arrives
+	 *  by replication, by multicast, or by both in either order. */
+	void ApplyDeathState();
+
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
 	void OnHealthChanged(float CurrentValue, float MaxValue);
 };

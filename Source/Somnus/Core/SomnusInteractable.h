@@ -6,6 +6,15 @@
 #include "UObject/Interface.h"
 #include "SomnusInteractable.generated.h"
 
+/** Custom depth stencil values, which are the contract between SetHighlighted and the outline
+ *  post-process material. A second outline colour later means a new value here and a branch
+ *  there - not a second material. */
+namespace SomnusStencil
+{
+	constexpr int32 None = 0;
+	constexpr int32 Interactable = 1;
+}
+
 // This class does not need to be modified.
 UINTERFACE(MinimalAPI)
 class USomnusInteractable : public UInterface
@@ -24,4 +33,7 @@ class SOMNUS_API ISomnusInteractable
 public:
 	UFUNCTION(BlueprintNativeEvent, Category = "Interaction")
 	void Interact(AActor* Interactor);
+	
+	UFUNCTION(BlueprintNativeEvent, Category = "Interaction")
+	void SetHighlighted(bool bHighlighted);
 };

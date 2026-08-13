@@ -29,6 +29,20 @@ void USomnusLootComponent::OpenLoot(AActor* Body)
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
 	if (!IsWithinReach(Body)) return;
 
+	SetLootTarget(Body);
+}
+
+void USomnusLootComponent::SetLootTarget(AActor* Body)
+{
+	// The equality check is what keeps the hand call below honest. A client only ever hears about
+	// a real change, because replication has nothing to send when the value did not move; without
+	// this the authority would announce closings that never happened, and a listen server host
+	// would be the one player whose panel opens as they die.
+	if (LootTarget == Body)
+	{
+		return;
+	}
+
 	LootTarget = Body;
 	OnRep_LootTarget();
 }
@@ -73,8 +87,8 @@ void USomnusLootComponent::Server_MoveItem_Implementation(USomnusInventoryCompon
 void USomnusLootComponent::Server_CloseLoot_Implementation()
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
-	LootTarget = nullptr;
-	OnRep_LootTarget();
+
+	SetLootTarget(nullptr);
 }
 
 void USomnusLootComponent::Server_DropFrom_Implementation(USomnusContainerEquipComponent* Source,

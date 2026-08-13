@@ -33,6 +33,7 @@
 #include "Character/SomnusHitReactComponent.h"
 #include "Equipment/SomnusMeleeWeapon.h"
 #include "PhysicsControlComponent.h"
+#include "Core/SomnusInteractorComponent.h"
 
 ASomnusCharacter::ASomnusCharacter()
 {
@@ -63,6 +64,8 @@ ASomnusCharacter::ASomnusCharacter()
 	ContainerEquipmentComponent = CreateDefaultSubobject<USomnusContainerEquipComponent>(TEXT("ContainerEquip"));
 
 	LootComponent = CreateDefaultSubobject<USomnusLootComponent>(TEXT("Loot"));
+	
+	InteractorComponent = CreateDefaultSubobject<USomnusInteractorComponent>(TEXT("InteractorComponent"));
 
 	HitReact = CreateDefaultSubobject<USomnusHitReactComponent>(TEXT("HitReact"));
 
@@ -212,6 +215,27 @@ TArray<FSomnusActiveContainerInfo> ASomnusCharacter::GetActiveContainers() const
 	return {};
 }
 
+void ASomnusCharacter::SetHighlighted_Implementation(bool bHighlighted)
+{
+	// The same question Interact asks, for the same reason. A living character is something the
+	// trace can find but has nothing to offer, so lighting one up would promise a search that
+	// never happens. Refusing here rather than in the interactor keeps the rule with the class
+	// that owns it - only a body knows when it became one.
+	if (!IsDead())
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* BodyMesh = GetMesh();
+	if (!BodyMesh)
+	{
+		return;
+	}
+
+	BodyMesh->SetCustomDepthStencilValue(bHighlighted ? SomnusStencil::Interactable : SomnusStencil::None);
+	BodyMesh->SetRenderCustomDepth(bHighlighted);
+}
+
 void ASomnusCharacter::SwitchWeapon(int32 SlotIndex)
 {
 	// Route through server RPC. On the server this executes locally; on a client it sends an RPC.
@@ -303,32 +327,16 @@ void ASomnusCharacter::Interact(const FInputActionValue& Value)
 
 void ASomnusCharacter::Server_Interact_Implementation()
 {
-	static constexpr float TraceLength = 200.f;
-	static constexpr float TraceRadius = 20.f;
-
-	// Control rotation replicates, so the server can aim this itself and owes the client no
-	// trust at all. The few frames it lags behind cost nothing at this range.
-	const FVector TraceStart = GetPawnViewLocation();
-	const FVector TraceEnd = TraceStart + GetControlRotation().Vector() * TraceLength;
-
-	TArray<AActor*> ActorsToIgnore;
 	FHitResult Hit;
-	const bool bTraceResult = UKismetSystemLibrary::SphereTraceSingle(
-		GetWorld(), TraceStart, TraceEnd, TraceRadius,
-		UEngineTypes::ConvertToTraceType(SomnusCollision::Interaction),
-		false, ActorsToIgnore, EDrawDebugTrace::None,
-		Hit, true);
-
-	if (!bTraceResult)
+	if (!InteractorComponent || !InteractorComponent->TraceForInteractable(Hit))
 	{
 		return;
 	}
 
-	AActor* HitActor = Hit.GetActor();
-
 	// Execute_Interact asserts on an actor that does not implement the interface. The channel
 	// being interact-only makes that unlikely rather than impossible, and an assert is too
 	// expensive a way to find out.
+	AActor* HitActor = Hit.GetActor();
 	if (HitActor && HitActor->Implements<USomnusInteractable>())
 	{
 		ISomnusInteractable::Execute_Interact(HitActor, this);
@@ -508,13 +516,14 @@ void ASomnusCharacter::Die(const FVector& HitDirection)
 		ASC->AddLooseGameplayTag(SomnusTags::State_Dead, 1, EGameplayTagReplicationState::TagOnly);
 	}
 
-	// Outside the block on purpose - the ragdoll has to happen either way.
+	// Outside the block on purpose - the ragdoll has to happen either way. No hand call to
+	// ApplyDeathState here the way OnRep_LootTarget needs one: a multicast runs locally on the
+	// authority too (Actor.cpp:5500-5519), so the server gets its half from this line.
 	MulticastDeath(HitDirection);
 }
 
-void ASomnusCharacter::MulticastDeath_Implementation(const FVector& HitDirection)
+void ASomnusCharacter::ApplyDeathState()
 {
-	// Disable capsule collision and stop movement
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	GetCharacterMovement()->SetMovementMode(MOVE_None);
 
@@ -527,8 +536,28 @@ void ASomnusCharacter::MulticastDeath_Implementation(const FVector& HitDirection
 	{
 		HitReact->SetPhysicsPose(ESomnusPhysicsPose::Limp);
 	}
+}
 
-	// Apply impulse in the hit direction
+void ASomnusCharacter::OnRep_Dead()
+{
+	// The half of dying that has to survive being missed. A machine that was not watching - out
+	// of relevancy, or not yet connected when the body fell - never hears the multicast, and
+	// would otherwise be left with a corpse standing up and playing its idle forever.
+	if (bDead)
+	{
+		ApplyDeathState();
+	}
+}
+
+void ASomnusCharacter::MulticastDeath_Implementation(const FVector& HitDirection)
+{
+	// Called here as well as from OnRep_Dead because the two have no ordering guarantee between
+	// them. Arriving first, this is what has the mesh simulating in time for the impulse below;
+	// arriving second, it costs nothing.
+	ApplyDeathState();
+
+	// Kept an event rather than moved into the state above, because it only means anything at the
+	// instant it happens. A machine that missed it wants the body, not a shove five seconds late.
 	if (!HitDirection.IsNearlyZero())
 	{
 		GetMesh()->AddImpulse(HitDirection * 1500.0f, NAME_None, true);

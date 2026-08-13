@@ -59,6 +59,12 @@ void ASomnusPickupActor::Interact_Implementation(AActor* Interactor)
 	PickUp(Interactor);
 }
 
+void ASomnusPickupActor::SetHighlighted_Implementation(bool bHighlighted)
+{
+	PickupMesh->SetCustomDepthStencilValue(bHighlighted ? SomnusStencil::Interactable : SomnusStencil::None);
+	PickupMesh->SetRenderCustomDepth(bHighlighted);
+}
+
 void ASomnusPickupActor::InitializeFromInstance(const FSomnusItemInstance* Instance)
 {
 	if (!Instance) return;

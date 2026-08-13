@@ -22,6 +22,7 @@ public:
 	 *  no client hop left to make. A Server RPC on this actor would be dropped anyway - a
 	 *  client owns its own pawn, never loose world loot. */
 	virtual void Interact_Implementation(AActor* Interactor) override;
+	virtual void SetHighlighted_Implementation(bool bHighlighted) override;
 	
 	void InitializeFromInstance(const FSomnusItemInstance* Instance);
 protected:

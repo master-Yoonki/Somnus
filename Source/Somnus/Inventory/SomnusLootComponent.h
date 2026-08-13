@@ -68,4 +68,8 @@ private:
 	/** Measured again on every request rather than trusted from the moment the body was opened:
 	 *  a panel left up while its owner walks away must stop being a way in. */
 	bool IsWithinReach(const AActor* Body) const;
+
+	/** The only writer. Announces a change and nothing else, so the authority - which never gets
+	 *  an OnRep of its own - stays in step with what every other machine was told. */
+	void SetLootTarget(AActor* Body);
 };

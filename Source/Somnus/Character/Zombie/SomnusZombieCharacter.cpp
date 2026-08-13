@@ -13,6 +13,7 @@
 #include "PhysicsControlComponent.h"
 #include "Core/SomnusGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Net/UnrealNetwork.h"
 
 // Sets default values
 ASomnusZombieCharacter::ASomnusZombieCharacter()
@@ -135,15 +136,24 @@ void ASomnusZombieCharacter::Die()
 	}
 	{
 		// Server only logic
+		bDead = true;
 		ASC->AddLooseGameplayTag(SomnusTags::State_Dead);
 		ASC->CancelAllAbilities();
 		DetachFromControllerPendingDestroy();
 		SetLifeSpan(5.f);
 	}
+
+	// A multicast runs locally on the authority too (Actor.cpp:5500-5519), so the server picks up
+	// its own death state from here rather than needing the hand call OnRep cannot give it.
 	MulticastZombieDeath();
 }
 
 void ASomnusZombieCharacter::MulticastZombieDeath_Implementation()
+{
+	ApplyDeathState();
+}
+
+void ASomnusZombieCharacter::ApplyDeathState()
 {
 	GetCharacterMovement()->SetMovementMode(MOVE_None);
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -155,4 +165,21 @@ void ASomnusZombieCharacter::MulticastZombieDeath_Implementation()
 	{
 		HitReact->SetPhysicsPose(ESomnusPhysicsPose::Limp);
 	}
+}
+
+void ASomnusZombieCharacter::OnRep_Dead()
+{
+	// The half of dying that survives being missed. The multicast reaches only whoever was
+	// relevant at that instant; this reaches everyone else the moment they arrive.
+	if (bDead)
+	{
+		ApplyDeathState();
+	}
+}
+
+void ASomnusZombieCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(ASomnusZombieCharacter, bDead);
 }

@@ -104,6 +104,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Loot", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class USomnusLootComponent> LootComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interact", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class USomnusInteractorComponent> InteractorComponent;
+	
 	// Physics-based flinch on non-lethal hits
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HitReact", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class USomnusHitReactComponent> HitReact;
@@ -136,8 +139,16 @@ protected:
 	/** Set on death and never cleared. The ability system lives on the PlayerState, which
 	 *  unpossessing hands to the next pawn - a corpse asked through the ASC alone would answer
 	 *  that it is alive, and so would a character placed in the level that never had one. */
-	UPROPERTY(Replicated, VisibleInstanceOnly, BlueprintReadOnly, Category = "GAS")
+	UPROPERTY(ReplicatedUsing = OnRep_Dead, VisibleInstanceOnly, BlueprintReadOnly, Category = "GAS")
 	bool bDead = false;
+
+	UFUNCTION()
+	void OnRep_Dead();
+
+	/** Everything about being a corpse that has to hold on every machine for as long as the body
+	 *  lasts. Idempotent on purpose: it arrives by replication, by multicast, or by both in
+	 *  either order, and none of those know about the others. */
+	void ApplyDeathState();
 
 public:
 
@@ -155,6 +166,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	TArray<struct FSomnusActiveContainerInfo> GetActiveContainers() const;
+	
+	virtual void SetHighlighted_Implementation(bool bHighlighted) override;
 
 	/** ISomnusInteractable. A body hands its searcher over to their own loot component; a living
 	 *  character offers nothing. Whether the searcher may then reach any particular grid is that
