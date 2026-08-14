@@ -74,11 +74,11 @@ public:
 
 	/** Checks if an item can fit at the specified location (ShapeMask aware) */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Grid")
-	bool CanFitAt(class USomnusItemDataAsset* ItemData, int32 TopLeftX, int32 TopLeftY, bool bRotated, FGuid IgnoreItemID = FGuid()) const;
+	virtual bool CanFitAt(class USomnusItemDataAsset* ItemData, int32 TopLeftX, int32 TopLeftY, bool bRotated, FGuid IgnoreItemID = FGuid()) const;
 
 	/** Finds the first available empty space for an item */
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Grid")
-	bool FindFirstFit(class USomnusItemDataAsset* ItemData, int32& OutX, int32& OutY, bool& bOutRotated) const;
+	virtual bool FindFirstFit(class USomnusItemDataAsset* ItemData, int32& OutX, int32& OutY, bool& bOutRotated) const;
 	
 	/** Tops up stacks of this item that already exist here, without ever opening a new cell.
 	 *  Returns the quantity that found no room. Split out from AddItemAnywhere so a caller
@@ -148,7 +148,7 @@ protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	/** Rebuilds the OccupationGrid bit array from scratch based on current items */
-	void RebuildOccupationGrid();
+	virtual void RebuildOccupationGrid();
 
 	/** Helper to find an item instance that covers a specific grid cell */
 	FSomnusItemInstance* GetItemAt(int32 X, int32 Y);

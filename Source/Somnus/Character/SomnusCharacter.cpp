@@ -34,6 +34,8 @@
 #include "Equipment/SomnusMeleeWeapon.h"
 #include "PhysicsControlComponent.h"
 #include "Core/SomnusInteractorComponent.h"
+#include "Inventory/SomnusEquipmentSlotComponent.h"
+#include "Misc/OutputDevice.h"
 
 ASomnusCharacter::ASomnusCharacter()
 {
@@ -778,5 +780,266 @@ void ASomnusCharacter::SomnusDumpContainers()
 	}
 
 	UE_LOG(LogSomnusInventory, Warning, TEXT("===== [%s] end ====="), *Machine);
+}
+
+// =================================================================================================
+// TEMPORARY - equip slot isolation proof. Delete this block, its two declarations, and the
+// SomnusEquipmentSlotComponent include once the result is recorded.
+// =================================================================================================
+namespace
+{
+	/** Counts Error and Fatal lines for as long as it is installed on GLog. This is what makes the
+	 *  proof self-checking rather than something read off a scrolling log: a slot that leaves
+	 *  RebuildOccupationGrid to the base class still passes every functional assertion below, and
+	 *  says so only by logging an out-of-bounds error on every add and every remove. */
+	class FSlotProofErrorSink : public FOutputDevice
+	{
+	public:
+		int32 ErrorCount = 0;
+		FString FirstError;
+
+		virtual void Serialize(const TCHAR* Message, ELogVerbosity::Type Verbosity, const FName& Category) override
+		{
+			if (Verbosity <= ELogVerbosity::Error)
+			{
+				++ErrorCount;
+				if (FirstError.IsEmpty())
+				{
+					FirstError = Message;
+				}
+			}
+		}
+	};
+
+	int32 GSlotProofTotal = 0;
+	int32 GSlotProofFailed = 0;
+
+	// Warning rather than Error even when the assertion fails, so the harness never contaminates
+	// the very count it is taking.
+	void SlotProof_Check(const TCHAR* Label, bool bCondition, const FString& Detail = FString())
+	{
+		++GSlotProofTotal;
+		if (!bCondition)
+		{
+			++GSlotProofFailed;
+		}
+
+		UE_LOG(LogSomnusInventory, Warning, TEXT("    [%s] %s%s"),
+			bCondition ? TEXT("PASS") : TEXT("FAIL"),
+			Label,
+			Detail.IsEmpty() ? TEXT("") : *FString::Printf(TEXT("   %s"), *Detail));
+	}
+
+	struct FSlotProofCandidate
+	{
+		USomnusInventoryComponent* Container = nullptr;
+		FSomnusItemInstance Item;
+		int32 Area = 0;
+	};
+
+	/** Every reachable grid, gathered again for each slot because the previous slot's run moved
+	 *  things. Not just the pockets: those are four 1x1 compartments, so nothing large enough to
+	 *  be worth testing can ever be in one. Largest first - the claim under test is that size
+	 *  stops mattering, which a subject that would have fit a 1x1 grid anyway cannot demonstrate. */
+	void SlotProof_GatherCandidates(const ASomnusCharacter* Character,
+		TArray<FSlotProofCandidate>& OutCandidates, int32& OutGridCount)
+	{
+		OutCandidates.Reset();
+		OutGridCount = 0;
+
+		for (const FSomnusActiveContainerInfo& Info : Character->GetActiveContainers())
+		{
+			if (!Info.Container)
+			{
+				continue;
+			}
+			++OutGridCount;
+
+			for (const FSomnusItemInstance& Item : Info.Container->GetAllItems())
+			{
+				if (!Item.ItemData)
+				{
+					continue;
+				}
+				const FIntPoint Size = Item.ItemData->GetEffectiveSize(Item.bRotated);
+				OutCandidates.Add({ Info.Container, Item, Size.X * Size.Y });
+			}
+		}
+
+		OutCandidates.Sort([](const FSlotProofCandidate& A, const FSlotProofCandidate& B)
+		{
+			return A.Area > B.Area;
+		});
+	}
+
+	void SlotProof_RunOne(ASomnusCharacter* Character, USomnusEquipmentSlotComponent* Slot)
+	{
+		UE_LOG(LogSomnusInventory, Warning, TEXT("  --- %s ---"), *GetNameSafe(Slot));
+
+		if (Slot->GetAllItems().Num() > 0)
+		{
+			UE_LOG(LogSomnusInventory, Warning,
+				TEXT("    skipped: not empty. A slot outside GetActiveContainers() has no other way out - move its contents by hand."));
+			return;
+		}
+
+		TArray<FSlotProofCandidate> Candidates;
+		int32 GridCount = 0;
+		SlotProof_GatherCandidates(Character, Candidates, GridCount);
+
+		if (Candidates.Num() == 0)
+		{
+			UE_LOG(LogSomnusInventory, Warning,
+				TEXT("    skipped: %d reachable grid(s), all empty. Put an item bigger than 1x1 in the rig or backpack."),
+				GridCount);
+			return;
+		}
+
+		USomnusInventoryComponent* Source = Candidates[0].Container;
+		const FSomnusItemInstance Subject = Candidates[0].Item;
+		const FIntPoint SubjectSize = Subject.ItemData->GetEffectiveSize(Subject.bRotated);
+
+		UE_LOG(LogSomnusInventory, Warning,
+			TEXT("    subject: %s  %dx%d  stackable=%s  container=%s  from %s  (%d grid(s), %d item(s))"),
+			*GetNameSafe(Subject.ItemData), SubjectSize.X, SubjectSize.Y,
+			Subject.ItemData->MaxStackCount > 1 ? TEXT("yes") : TEXT("no"),
+			Subject.ContainerActor ? TEXT("yes") : TEXT("no"),
+			*GetNameSafe(Source), GridCount, Candidates.Num());
+
+		if (SubjectSize.X * SubjectSize.Y <= 1)
+		{
+			UE_LOG(LogSomnusInventory, Warning,
+				TEXT("    WARNING: the largest item available is 1x1, so nothing below tests size blindness."));
+		}
+
+		// --- empty slot -------------------------------------------------------------------------
+		SlotProof_Check(TEXT("empty slot admits the item at (0,0)"),
+			Slot->CanFitAt(Subject.ItemData, 0, 0, false));
+
+		SlotProof_Check(TEXT("empty slot refuses a cell other than (0,0)"),
+			!Slot->CanFitAt(Subject.ItemData, 1, 0, false));
+
+		{
+			int32 X = -1, Y = -1;
+			bool bRotated = true;
+			const bool bFound = Slot->FindFirstFit(Subject.ItemData, X, Y, bRotated);
+			SlotProof_Check(TEXT("empty slot reports its one free cell"),
+				bFound && X == 0 && Y == 0 && !bRotated,
+				FString::Printf(TEXT("-> %s (%d,%d) rotated=%d"), bFound ? TEXT("true") : TEXT("false"), X, Y, bRotated ? 1 : 0));
+		}
+
+		// --- the move itself --------------------------------------------------------------------
+		SlotProof_Check(TEXT("a larger-than-slot item moves in"),
+			Slot->MoveItemFrom(Source, Subject.InstanceID, 0, 0, false));
+
+		SlotProof_Check(TEXT("slot holds exactly one item"),
+			Slot->GetAllItems().Num() == 1,
+			FString::Printf(TEXT("-> %d"), Slot->GetAllItems().Num()));
+
+		{
+			FSomnusItemInstance Leftover;
+			SlotProof_Check(TEXT("the source no longer holds it"),
+				!Source->FindItemByID(Subject.InstanceID, Leftover));
+		}
+
+		// --- full slot --------------------------------------------------------------------------
+		SlotProof_Check(TEXT("full slot refuses a new item"),
+			!Slot->CanFitAt(Subject.ItemData, 0, 0, false));
+
+		// The occupant must not block its own re-placement, which is what TryMoveItem asks for on
+		// every drag that ends where it started.
+		SlotProof_Check(TEXT("full slot admits the item it already holds (IgnoreItemID)"),
+			Slot->CanFitAt(Subject.ItemData, 0, 0, false, Subject.InstanceID));
+
+		{
+			int32 X = 0, Y = 0;
+			bool bRotated = false;
+			SlotProof_Check(TEXT("full slot reports no free cell"),
+				!Slot->FindFirstFit(Subject.ItemData, X, Y, bRotated));
+		}
+
+		if (Candidates.Num() >= 2)
+		{
+			const FSlotProofCandidate& Second = Candidates[1];
+			const bool bMoved = Slot->MoveItemFrom(Second.Container, Second.Item.InstanceID, 0, 0, false);
+			SlotProof_Check(TEXT("a second item is refused"),
+				!bMoved && Slot->GetAllItems().Num() == 1,
+				FString::Printf(TEXT("tried %s"), *GetNameSafe(Second.Item.ItemData)));
+		}
+		else
+		{
+			UE_LOG(LogSomnusInventory, Warning,
+				TEXT("    [SKIP] a second item is refused   (only one item was reachable)"));
+		}
+
+		// --- round trip -------------------------------------------------------------------------
+		{
+			int32 X = 0, Y = 0;
+			bool bRotated = false;
+			if (Source->FindFirstFit(Subject.ItemData, X, Y, bRotated))
+			{
+				const bool bMovedBack = Source->MoveItemFrom(Slot, Subject.InstanceID, X, Y, bRotated);
+				SlotProof_Check(TEXT("the item moves back out and the slot empties"),
+					bMovedBack && Slot->GetAllItems().Num() == 0,
+					FString::Printf(TEXT("-> %s (%d,%d)"), *GetNameSafe(Source), X, Y));
+			}
+			else
+			{
+				UE_LOG(LogSomnusInventory, Warning,
+					TEXT("    [SKIP] round trip   (the source has no room left to take it back)"));
+			}
+		}
+	}
+}
+
+void ASomnusCharacter::SomnusSlotProof()
+{
+	UE_LOG(LogSomnusInventory, Warning, TEXT("===== SlotProof ====="));
+
+	if (!HasAuthority())
+	{
+		UE_LOG(LogSomnusInventory, Warning,
+			TEXT("  aborted: no authority. This proof is about slot semantics, not routing - run it in the listen server window."));
+		return;
+	}
+
+	// Every slot on the character, so adding one never quietly narrows what this covers. Naming
+	// each run matters as much as the count: FindComponentByClass would have picked one of them
+	// arbitrarily and reported a pass without saying which slot earned it.
+	TArray<USomnusEquipmentSlotComponent*> Slots;
+	GetComponents<USomnusEquipmentSlotComponent>(Slots);
+
+	if (Slots.Num() == 0)
+	{
+		USomnusEquipmentSlotComponent* Scratch = NewObject<USomnusEquipmentSlotComponent>(this, TEXT("SlotProof_Scratch"));
+		Scratch->RegisterComponent();
+		Slots.Add(Scratch);
+		UE_LOG(LogSomnusInventory, Warning,
+			TEXT("  %s has no slot component - created a scratch one to test against."), *GetName());
+	}
+
+	GSlotProofTotal = 0;
+	GSlotProofFailed = 0;
+
+	FSlotProofErrorSink Sink;
+	GLog->AddOutputDevice(&Sink);
+
+	for (USomnusEquipmentSlotComponent* Slot : Slots)
+	{
+		SlotProof_RunOne(this, Slot);
+	}
+
+	GLog->Flush();
+	GLog->RemoveOutputDevice(&Sink);
+
+	// The assertion none of the others can make. Every functional check above passes with
+	// RebuildOccupationGrid left to the base class; only this line notices.
+	UE_LOG(LogSomnusInventory, Warning, TEXT("  --- across all slots ---"));
+	SlotProof_Check(TEXT("no error log lines were produced"),
+		Sink.ErrorCount == 0,
+		Sink.ErrorCount == 0 ? FString() : FString::Printf(TEXT("-> %d, first: %s"), Sink.ErrorCount, *Sink.FirstError));
+
+	UE_LOG(LogSomnusInventory, Warning, TEXT("===== SlotProof: %d slot(s), %d/%d passed ====="),
+		Slots.Num(), GSlotProofTotal - GSlotProofFailed, GSlotProofTotal);
 }
 

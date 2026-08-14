@@ -194,6 +194,12 @@ public:
 	UFUNCTION(Exec)
 	void SomnusDumpContainers();
 
+	// TEMPORARY - equip slot isolation proof. Runs the whole risk check server-side and prints
+	// PASS/FAIL per assertion, including a count of error log lines, which is the only way the
+	// missing RebuildOccupationGrid override announces itself. Delete once the result is recorded.
+	UFUNCTION(Exec)
+	void SomnusSlotProof();
+
 protected:
 	// GEs applied to the ASC at possession (e.g., stamina regen, passive buffs)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
