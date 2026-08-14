@@ -27,10 +27,27 @@ namespace SomnusTags
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Container_Rig);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Container_Backpack);
 
+	/** Pockets are a container item worn in a slot that refuses to give it up, rather than the
+	 *  fixture they used to be. The difference between them and a rig was only ever that one
+	 *  cannot be taken off, and saying so with a flag costs less than the parallel path it
+	 *  replaces - an actor member, its OnRep, its teardown, a slot type that named a thing that
+	 *  was not a slot, and a widget hiding a label it had just been handed. */
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Container_Pockets);
+
 	// Parents, so a weapon slot accepts every weapon kind and an armour slot every armour kind
 	// without either of them hearing about a new one.
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Weapon);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Armor);
+
+	// Which place, as opposed to what goes in it. A second hierarchy rather than a reuse of the
+	// one above, because the two weapon slots accept exactly the same things and are still not
+	// each other - what a slot admits and which slot it is are different questions the moment
+	// there is more than one slot of a kind.
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Pockets);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Rig);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Backpack);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Weapon_Primary);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipment_Slot_Weapon_Secondary);
 
 	// Equipment identity
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipped_Weapon_Bat);

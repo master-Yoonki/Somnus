@@ -19,66 +19,65 @@ USomnusContainerEquipComponent::USomnusContainerEquipComponent()
 	// off to improve performance if you don't need them.
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
+	bWantsInitializeComponent = true;
 	PickupActorClass = ASomnusPickupActor::StaticClass();
-	RigSlot = CreateDefaultSubobject<USomnusEquipmentSlotComponent>("RigSlot");
+
+	PocketSlot = CreateDefaultSubobject<USomnusEquipmentSlotComponent>("PocketSlot");
 	BackpackSlot = CreateDefaultSubobject<USomnusEquipmentSlotComponent>("BackpackSlot");
-	// ...
+	RigSlot = CreateDefaultSubobject<USomnusEquipmentSlotComponent>("RigSlot");
 }
 
 void USomnusContainerEquipComponent::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
-	
-	// Only Pocket. The two slots are constructor subobjects that exist on every machine already,
-	// and what is in them replicates as the grid contents it is.
-	DOREPLIFETIME(USomnusContainerEquipComponent, Pocket);
+
+	// Nothing. The slots are constructor subobjects that exist on every machine already, and what
+	// is in them replicates as the grid contents it is.
+}
+
+TArray<USomnusEquipmentSlotComponent*> USomnusContainerEquipComponent::GetStorageSlots() const
+{
+	return { PocketSlot, BackpackSlot, RigSlot };
 }
 
 TArray<FSomnusActiveContainerInfo> USomnusContainerEquipComponent::GetActiveContainers() const
 {
 	TArray<FSomnusActiveContainerInfo> ContainerInfos;
-	
-	// Entries are appended one slot type at a time, so each container's compartments come out
-	// as a contiguous run in SlotIndex order. The UI relies on that - do not interleave.
-	auto AddCompartmentsInfo = [this, &ContainerInfos](EContainerSlotType SlotType, USomnusItemDataAsset* SourceItemData, TArray<USomnusInventoryComponent*>& Compartments)
+
+	// One slot at a time in GetStorageSlots order, so each container's compartments come out as a
+	// contiguous run in SlotIndex order and pockets stay ahead of the backpack. The UI relies on
+	// the first, auto-placement on the second - do not interleave, do not sort.
+	//
+	// The slots themselves are deliberately not entries. This answers "what storage can hold a
+	// loose item", which is what TryAddItemAnywhere walks, and a slot listed here would swallow
+	// the first bandage that did not fit a pocket. The panels ask for slots by tag instead.
+	for (const USomnusEquipmentSlotComponent* Slot : GetStorageSlots())
 	{
-		const int32 NumCompartments = Compartments.Num();
-		FSomnusActiveContainerInfo CompartmentInfo;
-		CompartmentInfo.SlotType = SlotType;
-		CompartmentInfo.SourceItemData = SourceItemData;
-		for (int32 i = 0; i < NumCompartments; i++)
+		if (!Slot)
+		{
+			continue;
+		}
+
+		const FSomnusItemInstance Worn = GetEquippedInstance(Slot->GetSlotTag());
+		if (!Worn.ContainerActor)
+		{
+			continue;
+		}
+
+		FSomnusActiveContainerInfo Info;
+		Info.SlotTag = Slot->GetSlotTag();
+		Info.SourceItemData = Worn.ItemData;
+
+		const TArray<USomnusInventoryComponent*> Compartments = Worn.ContainerActor->GetCompartments();
+		for (int32 i = 0; i < Compartments.Num(); ++i)
 		{
 			if (Compartments[i])
 			{
-				CompartmentInfo.SlotIndex = i;
-				CompartmentInfo.Container = Compartments[i];
-				ContainerInfos.Add(CompartmentInfo);
+				Info.SlotIndex = i;
+				Info.Container = Compartments[i];
+				ContainerInfos.Add(Info);
 			}
 		}
-	};
-
-	if (Pocket)
-	{
-		TArray<USomnusInventoryComponent*> Compartments = Pocket->GetCompartments();
-		AddCompartmentsInfo(EContainerSlotType::Pockets, PocketData, Compartments);
-	}
-
-	// The slots themselves are deliberately not listed here. This answers "what storage can hold a
-	// loose item", which is what TryAddItemAnywhere walks - and a rig slot that appeared in it
-	// would swallow the first bandage that did not fit a pocket. The UI needs the slots too, but
-	// that is a different question and gets its own answer when the panels are built.
-	const FSomnusItemInstance WornBackpack = GetEquippedInstance(EContainerSlotType::Backpack);
-	if (WornBackpack.ContainerActor)
-	{
-		TArray<USomnusInventoryComponent*> Compartments = WornBackpack.ContainerActor->GetCompartments();
-		AddCompartmentsInfo(EContainerSlotType::Backpack, WornBackpack.ItemData, Compartments);
-	}
-
-	const FSomnusItemInstance WornRig = GetEquippedInstance(EContainerSlotType::Rig);
-	if (WornRig.ContainerActor)
-	{
-		TArray<USomnusInventoryComponent*> Compartments = WornRig.ContainerActor->GetCompartments();
-		AddCompartmentsInfo(EContainerSlotType::Rig, WornRig.ItemData, Compartments);
 	}
 
 	return ContainerInfos;
@@ -108,21 +107,44 @@ USomnusInventoryComponent* USomnusContainerEquipComponent::FindContainerHolding(
 	return nullptr;
 }
 
-class ASomnusContainerActor* USomnusContainerEquipComponent::GetEquippedContainer(EContainerSlotType SlotType) const
+ASomnusContainerActor* USomnusContainerEquipComponent::GetEquippedContainer(FGameplayTag SlotTag) const
 {
-	if (SlotType == EContainerSlotType::Pockets)
+	return GetEquippedInstance(SlotTag).ContainerActor;
+}
+
+void USomnusContainerEquipComponent::InitializeComponent()
+{
+	Super::InitializeComponent();
+
+	// Not BeginPlay: this component grants starting equipment there, and the weapon slots on the
+	// equipment component next door have to already know what they take by then. Every component
+	// on an actor is initialised before any of them begins play, so this is the one place the two
+	// cannot race.
+	//
+	// On every machine, not just the authority: a client that does not know what a slot admits
+	// waves every drag through until the server says otherwise.
+	if (PocketSlot)
 	{
-		return Pocket;
+		// The one locked slot. Everything else about it is a rig: a container item, worn, with
+		// compartments that come from its data asset.
+		PocketSlot->InitializeSlot(SomnusTags::Equipment_Slot_Pockets,
+			FGameplayTagContainer(SomnusTags::Item_Equipment_Container_Pockets),
+			FText::GetEmpty(), /*bLocked*/ true);
 	}
-	else if (USomnusEquipmentSlotComponent* EquipmentSlot = GetSlot(SlotType))
+
+	if (BackpackSlot)
 	{
-		if (!EquipmentSlot->GetAllItems().IsEmpty())
-		{
-			FSomnusItemInstance EquippedItemInstance = EquipmentSlot->GetAllItems()[0];
-			return EquippedItemInstance.ContainerActor;
-		}
+		BackpackSlot->InitializeSlot(SomnusTags::Equipment_Slot_Backpack,
+			FGameplayTagContainer(SomnusTags::Item_Equipment_Container_Backpack),
+			NSLOCTEXT("Somnus", "SlotBackpack", "BACKPACK"));
 	}
-	return nullptr;
+
+	if (RigSlot)
+	{
+		RigSlot->InitializeSlot(SomnusTags::Equipment_Slot_Rig,
+			FGameplayTagContainer(SomnusTags::Item_Equipment_Container_Rig),
+			NSLOCTEXT("Somnus", "SlotRig", "RIG"));
+	}
 }
 
 // Called when the game starts
@@ -132,7 +154,7 @@ void USomnusContainerEquipComponent::BeginPlay()
 
 	// Before the authority gate on purpose: a client's panels have to redraw when what is worn
 	// changes, and a client never reaches anything past it.
-	for (USomnusEquipmentSlotComponent* Slot : { RigSlot.Get(), BackpackSlot.Get() })
+	for (USomnusEquipmentSlotComponent* Slot : GetStorageSlots())
 	{
 		if (!Slot)
 		{
@@ -141,44 +163,11 @@ void USomnusContainerEquipComponent::BeginPlay()
 		Slot->OnItemAddedDelegate.AddDynamic(this, &USomnusContainerEquipComponent::HandleSlotContentsChanged);
 		Slot->OnItemRemovedDelegate.AddDynamic(this, &USomnusContainerEquipComponent::HandleSlotContentsChanged);
 	}
-	
-	{
-		FGameplayTagContainer RigSlotAcceptedTags;
-		RigSlotAcceptedTags.AddTag(SomnusTags::Item_Equipment_Container_Rig);
-		RigSlot->InitializeAcceptedItemTags(RigSlotAcceptedTags);
-	}
-	{
-		FGameplayTagContainer BackpackSlotAcceptedTags;
-		BackpackSlotAcceptedTags.AddTag(SomnusTags::Item_Equipment_Container_Backpack);
-		BackpackSlot->InitializeAcceptedItemTags(BackpackSlotAcceptedTags);
-	}
-
 
 	if (!GetOwner()->HasAuthority())
 	{
 		return;
 	}
-
-	if (!PocketData)
-	{
-		UE_LOG(LogSomnusInventory, Error,
-			TEXT("%s has no PocketData assigned - this character will have no pockets."),
-			*GetOwner()->GetName());
-		return;
-	}
-
-	Pocket = GetWorld()->SpawnActor<ASomnusContainerActor>();
-	if (!Pocket)
-	{
-		UE_LOG(LogSomnusInventory, Error,
-			TEXT("Failed to spawn the pocket container for %s."), *GetOwner()->GetName());
-		return;
-	}
-	
-	Pocket->SetOwner(GetOwner());
-	Pocket->Initialize(PocketData);
-	// When server pocket ready, server can't re
-	OnActiveContainersChangedDelegate.Broadcast();
 
 	for (const TObjectPtr<USomnusContainerDataAsset>& EquipmentData : DefaultEquipment)
 	{
@@ -246,12 +235,28 @@ bool USomnusContainerEquipComponent::EquipInstance(const FSomnusItemInstance& In
 		return false;
 	}
 
-	USomnusEquipmentSlotComponent* TargetSlot = GetSlot(ContainerDataAsset->SlotType);
+	// Routed by asking each slot rather than by looking the item's kind up in a table. AcceptsItem
+	// is the same question a drag asks, so granting and dragging can never disagree about where
+	// something belongs, and a new kind of worn thing needs no entry anywhere.
+	USomnusEquipmentSlotComponent* TargetSlot = nullptr;
+	TArray<USomnusEquipmentSlotComponent*> Slots;
+	GetOwner()->GetComponents<USomnusEquipmentSlotComponent>(Slots);
+	for (USomnusEquipmentSlotComponent* Slot : Slots)
+	{
+		// Empty as well as willing: two weapon slots take the same things, so a kit granting two
+		// weapons has to land the second one somewhere other than where the first went.
+		if (Slot && Slot->AcceptsItem(ContainerDataAsset) && Slot->GetAllItems().IsEmpty())
+		{
+			TargetSlot = Slot;
+			break;
+		}
+	}
+
 	if (!TargetSlot)
 	{
 		UE_LOG(LogSomnusInventory, Warning,
-			TEXT("EquipInstance: %s declares a slot that cannot be worn."),
-			*ContainerDataAsset->GetName());
+			TEXT("EquipInstance: nothing on %s wears %s."),
+			*GetOwner()->GetName(), *ContainerDataAsset->GetName());
 		return false;
 	}
 
@@ -334,9 +339,10 @@ int32 USomnusContainerEquipComponent::TryAddExistingItemAnywhere(FSomnusItemInst
 	return ItemInstance.StackCount;
 }
 
-FSomnusItemInstance USomnusContainerEquipComponent::GetEquippedInstance(EContainerSlotType SlotType) const
+FSomnusItemInstance USomnusContainerEquipComponent::GetEquippedInstance(FGameplayTag SlotTag) const
 {
-	const USomnusEquipmentSlotComponent* Slot = GetSlot(SlotType);
+	const USomnusEquipmentSlotComponent* Slot =
+		USomnusEquipmentSlotComponent::FindSlot(GetOwner(), SlotTag);
 	if (!Slot)
 	{
 		return FSomnusItemInstance();
@@ -347,35 +353,13 @@ FSomnusItemInstance USomnusContainerEquipComponent::GetEquippedInstance(EContain
 	return Worn.Num() > 0 ? Worn[0] : FSomnusItemInstance();
 }
 
-class USomnusEquipmentSlotComponent* USomnusContainerEquipComponent::GetSlot(EContainerSlotType SlotType) const
-{
-	if (SlotType == EContainerSlotType::Backpack)
-	{
-		return BackpackSlot;
-	}
-	else if (SlotType == EContainerSlotType::Rig)
-	{
-		return RigSlot;
-	}
-	return nullptr;
-}
-
 void USomnusContainerEquipComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
-	
-	if (EndPlayReason == EEndPlayReason::Type::Destroyed || EndPlayReason == EEndPlayReason::Type::RemovedFromWorld)
-	{
-		if (Pocket && GetOwner()->HasAuthority())
-		{
-			GetWorld()->DestroyActor(Pocket);
-		}
-	}
-}
 
-void USomnusContainerEquipComponent::OnRep_Pocket()
-{
-	OnActiveContainersChangedDelegate.Broadcast();
+	// The pocket container actor used to be torn down here by name. It is an ordinary worn item
+	// now, so it leaks exactly the way a rig does - which is the same one bug rather than two, and
+	// gets fixed once, wherever worn containers learn to clean up after their wearer.
 }
 
 void USomnusContainerEquipComponent::HandleSlotContentsChanged(const FSomnusItemInstance& Item)
@@ -410,12 +394,17 @@ bool USomnusContainerEquipComponent::DropItem(FGuid InstanceID)
 	// Worn equipment is in a grid too now, but not one GetActiveContainers lists - the slots stay
 	// out of that answer so loose items never land in them - so the search above still cannot see
 	// it and this second look is still needed.
+	// Every slot on the character, not a hard-coded pair: weapon slots are somewhere else entirely
+	// and armour will be too, and a drop that only knew about the rig and the backpack would go on
+	// quietly failing for each of them.
 	USomnusEquipmentSlotComponent* WornSlot = nullptr;
 	if (!HoldingContainer)
 	{
-		for (const EContainerSlotType SlotType : { EContainerSlotType::Rig, EContainerSlotType::Backpack })
+		TArray<USomnusEquipmentSlotComponent*> Slots;
+		OwnerActor->GetComponents<USomnusEquipmentSlotComponent>(Slots);
+
+		for (USomnusEquipmentSlotComponent* Slot : Slots)
 		{
-			USomnusEquipmentSlotComponent* Slot = GetSlot(SlotType);
 			FSomnusItemInstance Worn;
 			if (Slot && Slot->FindItemByID(InstanceID, Worn))
 			{

@@ -3,10 +3,52 @@
 
 #include "Inventory/SomnusEquipmentSlotComponent.h"
 
+#include "GameFramework/Actor.h"
+
 USomnusEquipmentSlotComponent::USomnusEquipmentSlotComponent()
 {
 	GridWidth = 1;
 	GridHeight = 1;
+}
+
+void USomnusEquipmentSlotComponent::InitializeSlot(FGameplayTag InSlotTag,
+	const FGameplayTagContainer& InAcceptedTags, const FText& InLabel, bool bInLocked)
+{
+	SlotTag = InSlotTag;
+	SlotLabel = InLabel;
+	bLocked = bInLocked;
+	InitializeAcceptedItemTags(InAcceptedTags);
+}
+
+bool USomnusEquipmentSlotComponent::AcceptsItem(USomnusItemDataAsset* ItemData) const
+{
+	if (AcceptedTags.IsEmpty())
+	{
+		return false;
+	}
+
+	return Super::AcceptsItem(ItemData);
+}
+
+USomnusEquipmentSlotComponent* USomnusEquipmentSlotComponent::FindSlot(const AActor* Owner, FGameplayTag InSlotTag)
+{
+	if (!Owner || !InSlotTag.IsValid())
+	{
+		return nullptr;
+	}
+
+	TArray<USomnusEquipmentSlotComponent*> Slots;
+	Owner->GetComponents<USomnusEquipmentSlotComponent>(Slots);
+
+	for (USomnusEquipmentSlotComponent* Slot : Slots)
+	{
+		if (Slot && Slot->SlotTag == InSlotTag)
+		{
+			return Slot;
+		}
+	}
+
+	return nullptr;
 }
 
 bool USomnusEquipmentSlotComponent::CanFitAt(class USomnusItemDataAsset* ItemData, int32 TopLeftX, int32 TopLeftY,

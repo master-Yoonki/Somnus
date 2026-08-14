@@ -25,6 +25,7 @@
 #include "Inventory/SomnusItemTypes.h"
 #include "Inventory/SomnusItemDataAsset.h"
 #include "Inventory/SomnusContainerEquipComponent.h"
+#include "Inventory/SomnusEquipmentComponent.h"
 #include "Inventory/SomnusLootComponent.h"
 #include "EngineUtils.h"
 #include "Core/SomnusInteractable.h"
@@ -64,6 +65,8 @@ ASomnusCharacter::ASomnusCharacter()
 	FollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm
 
 	ContainerEquipmentComponent = CreateDefaultSubobject<USomnusContainerEquipComponent>(TEXT("ContainerEquip"));
+
+	EquipmentComponent = CreateDefaultSubobject<USomnusEquipmentComponent>(TEXT("Equipment"));
 
 	LootComponent = CreateDefaultSubobject<USomnusLootComponent>(TEXT("Loot"));
 	
@@ -655,15 +658,9 @@ static FString SomnusDebug_RoleLabel(const AActor* Actor)
 	}
 }
 
-static FString SomnusDebug_SlotLabel(EContainerSlotType SlotType)
+static FString SomnusDebug_SlotLabel(FGameplayTag SlotTag)
 {
-	switch (SlotType)
-	{
-	case EContainerSlotType::Pockets:  return TEXT("Pockets");
-	case EContainerSlotType::Rig:      return TEXT("Rig");
-	case EContainerSlotType::Backpack: return TEXT("Backpack");
-	default:                           return TEXT("?");
-	}
+	return SlotTag.IsValid() ? SlotTag.ToString() : TEXT("?");
 }
 
 // Lists the items of one grid, recursing into a container item's own compartments so
@@ -743,7 +740,7 @@ static void SomnusDebug_DumpCharacter(ASomnusCharacter* Character)
 		if (!Grid)
 		{
 			UE_LOG(LogSomnusInventory, Error, TEXT("     [%s %d]  Container is NULL  <-- should have been filtered"),
-				*SomnusDebug_SlotLabel(Info.SlotType), Info.SlotIndex);
+				*SomnusDebug_SlotLabel(Info.SlotTag), Info.SlotIndex);
 			continue;
 		}
 
@@ -752,7 +749,7 @@ static void SomnusDebug_DumpCharacter(ASomnusCharacter* Character)
 		UE_LOG(LogSomnusInventory, Warning,
 			TEXT("     #%d  [%s %d]  %s  Registered=%d  Initialized=%d  Items=%d"),
 			FlatIndex,
-			*SomnusDebug_SlotLabel(Info.SlotType), Info.SlotIndex, *Grid->GetName(),
+			*SomnusDebug_SlotLabel(Info.SlotTag), Info.SlotIndex, *Grid->GetName(),
 			Grid->IsRegistered() ? 1 : 0,
 			Grid->HasBeenInitialized() ? 1 : 0,
 			Grid->GetAllItems().Num());

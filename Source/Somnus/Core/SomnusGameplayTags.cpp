@@ -10,8 +10,16 @@ namespace SomnusTags
 	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Container, "Item.Equipment.Container");
 	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Container_Rig, "Item.Equipment.Container.Rig");
 	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Container_Backpack, "Item.Equipment.Container.Backpack");
+	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Container_Pockets, "Item.Equipment.Container.Pockets");
 	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Weapon, "Item.Equipment.Weapon");
 	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Armor, "Item.Equipment.Armor");
+
+	// Slot identity
+	UE_DEFINE_GAMEPLAY_TAG(Equipment_Slot_Pockets, "Equipment.Slot.Pockets");
+	UE_DEFINE_GAMEPLAY_TAG(Equipment_Slot_Rig, "Equipment.Slot.Rig");
+	UE_DEFINE_GAMEPLAY_TAG(Equipment_Slot_Backpack, "Equipment.Slot.Backpack");
+	UE_DEFINE_GAMEPLAY_TAG(Equipment_Slot_Weapon_Primary, "Equipment.Slot.Weapon.Primary");
+	UE_DEFINE_GAMEPLAY_TAG(Equipment_Slot_Weapon_Secondary, "Equipment.Slot.Weapon.Secondary");
 
 	// Equipment identity
 	UE_DEFINE_GAMEPLAY_TAG(Equipped_Weapon_Bat, "Equipped.Weapon.Bat");

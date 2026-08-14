@@ -20,9 +20,10 @@ class SOMNUS_API USomnusContainerDataAsset : public USomnusItemDataAsset
 public:
 	USomnusContainerDataAsset();
 	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Container|Configuration")
-	EContainerSlotType SlotType = EContainerSlotType::Backpack;
-	
+	// Which slot this goes in is not declared here any more. ItemTag already said it - a rig is
+	// tagged Item.Equipment.Container.Rig and the rig slot accepts exactly that - and two fields
+	// answering one question is two fields that can disagree.
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Container|Configuration")
 	FGameplayTagContainer AcceptedTags;
 	

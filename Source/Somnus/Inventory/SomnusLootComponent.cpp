@@ -5,6 +5,7 @@
 
 #include "SomnusContainerActor.h"
 #include "SomnusContainerEquipComponent.h"
+#include "SomnusEquipmentSlotComponent.h"
 #include "SomnusInventoryComponent.h"
 #include "Net/UnrealNetwork.h"
 
@@ -80,7 +81,15 @@ void USomnusLootComponent::Server_MoveItem_Implementation(USomnusInventoryCompon
 	
 	if (!CanAccessContainer(Source)) return;
 	if (!CanAccessContainer(Dest)) return;
-	
+
+	// A locked slot keeps what it holds. Checked here rather than in the grid, because what a
+	// player may ask for is the whole question - the server still empties a corpse and grants a
+	// starting kit through the same components.
+	if (const USomnusEquipmentSlotComponent* Slot = Cast<USomnusEquipmentSlotComponent>(Source))
+	{
+		if (Slot->IsLocked()) return;
+	}
+
 	Dest->MoveItemFrom(Source, InstanceID, TopLeftX, TopLeftY, bRotated);
 }
 

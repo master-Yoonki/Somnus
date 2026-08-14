@@ -37,11 +37,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	USomnusInventoryComponent* FindContainerHolding(FGuid InstanceID, FSomnusItemInstance& OutInstance) const;
 
-	/** Puts an already-formed container instance into the slot its data asset declares. Granting
-	 *  rather than equipping: the instance has just been minted and is in no grid yet, which is
-	 *  why this is not a move like every other way something reaches a slot. Returns false and
-	 *  changes nothing when the item is not a container, declares Pockets, or the slot refuses
-	 *  it. Server only. */
+	/** Puts an already-formed container instance into whichever slot accepts it. Granting rather
+	 *  than equipping: the instance has just been minted and is in no grid yet, which is why this
+	 *  is not a move like every other way something reaches a slot. The routing is the item's own
+	 *  tag against each slot's - no table mapping one to the other, so a new kind of worn thing is
+	 *  a data asset and a slot and nothing else. Returns false and changes nothing when no slot
+	 *  will have it. Server only. */
 	bool EquipInstance(const FSomnusItemInstance& Instance);
 
 	// Nothing here equips or unequips any more. A worn slot is a grid, so a drag onto one or off
@@ -68,19 +69,24 @@ public:
 	 *  ContainerActor, and has to decide what happens to it. Server only. */
 	int32 TryAddExistingItemAnywhere(FSomnusItemInstance& ItemInstance);
 	
-	/** What is worn in SlotType, or a default-constructed instance when nothing is - test
-	 *  InstanceID.IsValid() to tell the two apart, never StackCount, which defaults to 1.
-	 *  Pockets are not a worn slot and always read as empty. */
+	/** What is worn in the slot answering to SlotTag, or a default-constructed instance when
+	 *  nothing is - test InstanceID.IsValid() to tell the two apart, never StackCount, which
+	 *  defaults to 1. */
 	UFUNCTION(BlueprintPure, Category = "Equipment")
-	FSomnusItemInstance GetEquippedInstance(EContainerSlotType SlotType) const;
+	FSomnusItemInstance GetEquippedInstance(FGameplayTag SlotTag) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Equipment")
-	class USomnusEquipmentSlotComponent* GetSlot(EContainerSlotType SlotType) const;
-	
-	UFUNCTION(BlueprintCallable, Category = "Equipment")
-	class ASomnusContainerActor* GetEquippedContainer(EContainerSlotType SlotType) const;
-	
+	UFUNCTION(BlueprintPure, Category = "Equipment")
+	class ASomnusContainerActor* GetEquippedContainer(FGameplayTag SlotTag) const;
+
+	// No GetSlot here any more. USomnusEquipmentSlotComponent::FindSlot asks the actor, which is
+	// the only level the question has one answer at: slots are declared by more than one
+	// component on purpose, and a caller wanting the primary weapon slot should not have to know
+	// that storage is not where it lives.
+
+
 protected:
+	virtual void InitializeComponent() override;
+
 	// Called when the game starts
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -99,11 +105,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment", meta = (ClampMin = "0.0"))
 	float DropScatterRadius = 30.f;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Equipment")
-	TObjectPtr<USomnusContainerDataAsset> PocketData;
-
-	/** Containers worn from the start. Routed by each asset's own SlotType.
-	 *  Leave empty to spawn with nothing worn. */
+	/** Containers worn from the start, routed by each asset's own item tag. Pockets belong here
+	 *  like anything else now - they are granted, worn and reported by the same code as a rig,
+	 *  and differ only in sitting in a slot nothing can drag them out of. */
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment")
 	TArray<TObjectPtr<USomnusContainerDataAsset>> DefaultEquipment;
 
@@ -113,22 +117,25 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Equipment")
 	TMap<TObjectPtr<USomnusItemDataAsset>, int32> DefaultItems;
 	
-	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Pocket)
-	TObjectPtr<ASomnusContainerActor> Pocket;
-	
-	/** What is worn now lives in these rather than in a replicated FSomnusItemInstance of its own.
-	 *  Constructor subobjects rather than anything replicated: both machines build their own at the
-	 *  same path, so the pointer is valid everywhere from construction and there is nothing for an
-	 *  OnRep to announce - the contents replicate through the grid each one already is. Pocket next
-	 *  door is spawned at runtime from a data asset, which is the only reason it needs telling. */
+	/** The storage slots, in the order auto-placement should try them. Named members rather than
+	 *  anything gathered from the actor because that order is a decision: a picked-up bandage goes
+	 *  to a pocket before it opens a cell in the backpack, and GetComponents would hand them back
+	 *  in whatever order they happen to sit in.
+	 *
+	 *  Constructor subobjects and nothing replicated: both machines build their own at the same
+	 *  path, so the pointers are valid everywhere from construction, and what is worn replicates
+	 *  as the grid contents each slot already is. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
-	TObjectPtr<class USomnusEquipmentSlotComponent> RigSlot;
+	TObjectPtr<class USomnusEquipmentSlotComponent> PocketSlot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
 	TObjectPtr<class USomnusEquipmentSlotComponent> BackpackSlot;
 
-	UFUNCTION()
-	void OnRep_Pocket();
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
+	TObjectPtr<class USomnusEquipmentSlotComponent> RigSlot;
+
+	/** The three above, in that order. */
+	TArray<class USomnusEquipmentSlotComponent*> GetStorageSlots() const;
 
 	/** Bound to both slots' add and remove delegates, on every machine. Replaces the hand-called
 	 *  notify the replicated slots needed: a grid tells its listeners itself, and it tells them on

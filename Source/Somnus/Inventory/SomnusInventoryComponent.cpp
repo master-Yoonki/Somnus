@@ -68,27 +68,6 @@ bool USomnusInventoryComponent::AcceptsItem(USomnusItemDataAsset* ItemData) cons
 	return ItemData->ItemTag.MatchesAny(AcceptedTags);
 }
 
-void USomnusInventoryComponent::BeginPlay()
-{
-	Super::BeginPlay();
-
-	// Only grant default items on the server
-	AActor* OwnerActor = GetOwner();
-	if (OwnerActor && OwnerActor->HasAuthority())
-	{
-		for (const auto& Pair : DefaultItems)
-		{
-			USomnusItemDataAsset* ItemData = Pair.Key;
-			int32 Quantity = Pair.Value;
-
-			if (IsValid(ItemData) && Quantity > 0)
-			{
-				AddItemAnywhere(ItemData, Quantity);
-			}
-		}
-	}
-}
-
 void USomnusInventoryComponent::InitializeGridSize(int32 NewX, int32 NewY)
 {
 	AActor* OwnerActor = GetOwner();

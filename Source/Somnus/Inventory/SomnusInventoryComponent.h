@@ -48,7 +48,7 @@ public:
 	 *  AcceptedTags is no restriction rather than a refusal of everything, so a plain grid that
 	 *  was never narrowed takes anything. */
 	UFUNCTION(BlueprintPure, Category = "Inventory")
-	bool AcceptsItem(class USomnusItemDataAsset* ItemData) const;
+	virtual bool AcceptsItem(class USomnusItemDataAsset* ItemData) const;
 	
 	/** Returns all items currently in the inventory (useful for UI initialization) */
 	UFUNCTION(BlueprintPure, Category = "Inventory")
@@ -162,7 +162,6 @@ public:
 	void OnItemChanged(const FSomnusItemInstance& Item);
 
 protected:
-	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Tag", Replicated)
@@ -197,7 +196,10 @@ protected:
 
 	/** Bit array representing the occupancy of each grid cell. Rebuilt locally. */
 	TBitArray<> OccupationGrid;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Debug")
-	TMap<USomnusItemDataAsset*, int32> DefaultItems;
+
+	// No DefaultItems here. Seeding a grid from the grid itself predates the equipment component
+	// and nothing ever set it, while every grid on a character inherited the field and showed it
+	// in the details panel - one row per compartment, per slot, all empty. Starting kit is granted
+	// through USomnusContainerEquipComponent, which is the only thing that knows the order to
+	// spread it across.
 };

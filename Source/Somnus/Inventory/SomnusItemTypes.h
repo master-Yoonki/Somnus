@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "SomnusItemTypes.generated.h"
 
 class USomnusInventoryComponent;
@@ -30,32 +31,29 @@ enum class EMedicalEffectType : uint8
 };
 
 
-// For player equipped container
-UENUM(BlueprintType)
-enum class EContainerSlotType : uint8
-{
-	Pockets		 UMETA(DisplayName = "Pockets"),
-	Backpack	 UMETA(DisplayName = "Backpack"),
-	Rig			 UMETA(DisplayName = "Rig")
-};
-
 USTRUCT(BlueprintType)
 struct FSomnusActiveContainerInfo
 {
 	GENERATED_BODY()
+
+	/** Which slot the storage hangs off, as a tag rather than an enum. An enum had to name every
+	 *  slot in one list, which is how a value called Pockets ended up in it before pockets were a
+	 *  slot at all, and every new slot meant a new value and a new case in whatever switched on
+	 *  it. Tags nest instead: Equipment.Slot.Weapon.Primary is a weapon slot without anyone
+	 *  writing that down twice. */
 	UPROPERTY(BlueprintReadOnly)
-	EContainerSlotType SlotType = EContainerSlotType::Pockets;
-	
+	FGameplayTag SlotTag;
+
 	// if multi - compartment container
 	UPROPERTY(BlueprintReadOnly)
 	int32 SlotIndex = INDEX_NONE;
-	
+
 	UPROPERTY(BlueprintReadOnly)
 	TObjectPtr<USomnusInventoryComponent> Container = nullptr;
 
 	/** The item this storage came from, for UI that needs to name or picture it. Every
-	 *  compartment of one container reports the same asset. Never null for a well-formed
-	 *  entry - pockets report their PocketData, worn slots report the equipped item. */
+	 *  compartment of one container reports the same asset, and pockets are an item like the
+	 *  rest now, so there is no entry without one. */
 	UPROPERTY(BlueprintReadOnly)
 	TObjectPtr<USomnusItemDataAsset> SourceItemData = nullptr;
 };

@@ -98,6 +98,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "EquipmentComponent", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class USomnusContainerEquipComponent> ContainerEquipmentComponent;
 
+	// The worn slots that are not storage - weapons now, armour later.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "EquipmentComponent", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class USomnusEquipmentComponent> EquipmentComponent;
+
 	// Which grids this character may reach into, its own included - i.e. the body it has open.
 	// A C++ subobject rather than a Blueprint-added component because every client entry point
 	// into storage now routes through it: a character missing it could not move items at all.
