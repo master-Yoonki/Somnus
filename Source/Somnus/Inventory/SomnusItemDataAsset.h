@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "Engine/DataAsset.h"
 #include "Inventory/SomnusItemTypes.h"
 #include "SomnusItemDataAsset.generated.h"
@@ -53,6 +54,12 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Classification")
 	EItemCategory Category = EItemCategory::None;
+	
+	/** What this item is, matched against a grid's AcceptedTags. Hierarchical, so a slot that
+	 *  accepts Item.Equipment.Weapon takes every weapon kind under it. Leave the leaves to the
+	 *  editor's tag table: no code asks whether something is a helmet. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Classification")
+	FGameplayTag ItemTag;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Stats", meta = (ClampMin = "1"))
 	int32 MaxStackCount = 1;

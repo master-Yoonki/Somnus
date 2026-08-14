@@ -5,6 +5,14 @@
 
 namespace SomnusTags
 {
+	// Item type
+	UE_DEFINE_GAMEPLAY_TAG(Item, "Item");
+	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Container, "Item.Equipment.Container");
+	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Container_Rig, "Item.Equipment.Container.Rig");
+	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Container_Backpack, "Item.Equipment.Container.Backpack");
+	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Weapon, "Item.Equipment.Weapon");
+	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Armor, "Item.Equipment.Armor");
+
 	// Equipment identity
 	UE_DEFINE_GAMEPLAY_TAG(Equipped_Weapon_Bat, "Equipped.Weapon.Bat");
 

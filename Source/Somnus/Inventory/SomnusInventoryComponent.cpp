@@ -23,6 +23,18 @@ void USomnusInventoryComponent::InitializeComponent()
 {
 	Super::InitializeComponent();
 
+	// Again, because the constructor's assignment does not survive on every path here. A component
+	// made with CreateDefaultSubobject is built from the class default object's copy: the
+	// constructor runs and points this at the new instance, and then the archetype's properties
+	// are copied over the top, carrying a back-pointer to the CDO's component with them. It is a
+	// plain object property, so nothing remaps it. What follows is a grid whose replication
+	// callbacks fire on the CDO instead - no crash, no warning, just delegates broadcast where
+	// nobody is listening, and only on the machines that learn by replication.
+	//
+	// Grids made with NewObject never had the problem, which is why every compartment behaved and
+	// only the equipment slots went quiet.
+	InventoryList.OwnerComponent = this;
+
 	// Initialize the occupancy grid with false (empty) bits
 	OccupationGrid.Init(false, GridWidth * GridHeight);
 
@@ -30,6 +42,30 @@ void USomnusInventoryComponent::InitializeComponent()
 
 	// Zero Calibration: Print the empty grid to verify setup
 	// PrintDebugGrid();
+}
+
+void USomnusInventoryComponent::InitializeAcceptedItemTags(const FGameplayTagContainer& InTags)
+{
+	AcceptedTags = InTags;
+}
+
+bool USomnusInventoryComponent::AcceptsItem(USomnusItemDataAsset* ItemData) const
+{
+	if (!ItemData)
+	{
+		return false;
+	}
+
+	if (AcceptedTags.IsEmpty())
+	{
+		return true;
+	}
+
+	// The item's tag is the leaf and the grid's is the parent, so the match has to run this way
+	// round: "Item.Equipment.Weapon.Melee".MatchesAny({"Item.Equipment.Weapon"}) is true, while
+	// the container asking the same question of the tag is not. That is what lets one weapon slot
+	// accept every weapon kind without hearing about a new one.
+	return ItemData->ItemTag.MatchesAny(AcceptedTags);
 }
 
 void USomnusInventoryComponent::BeginPlay()
@@ -70,15 +106,16 @@ bool USomnusInventoryComponent::IsValidCell(int32 X, int32 Y) const
 bool USomnusInventoryComponent::CanFitAt(USomnusItemDataAsset* ItemData, int32 TopLeftX, int32 TopLeftY, bool bRotated, FGuid IgnoreItemID) const
 {
 	if (!ItemData) return false;
-	
+	if (!AcceptsItem(ItemData)) return false;
+
 	const FIntPoint ItemSize = ItemData->GetEffectiveSize(bRotated);
-	
+
 	const FIntPoint TopLeft = FIntPoint(TopLeftX, TopLeftY);
 	const FIntPoint BottomRight = TopLeft + ItemSize - FIntPoint(1, 1);
-	
+
 	if (!IsValidCell(TopLeft.X, TopLeft.Y)) return false;
 	if (!IsValidCell(BottomRight.X, BottomRight.Y)) return false;
-	
+
 	for (int32 y = 0; y < ItemSize.Y; ++y)
 	{
 		for (int32 x = 0; x < ItemSize.X; ++x)
@@ -741,23 +778,38 @@ bool USomnusInventoryComponent::FindItemByID(FGuid InstanceID, FSomnusItemInstan
 	return false;
 }
 
+/** Which grid, on which machine. These three fire from two unrelated places - the authority's own
+ *  edits and the FastArray callbacks on everyone else - so a line that names only the item leaves
+ *  the reader counting log lines to guess where each came from. */
+FString USomnusInventoryComponent::DescribeForLog() const
+{
+	const AActor* OwnerActor = GetOwner();
+	return FString::Printf(TEXT("[%s] %s on %s"),
+		OwnerActor && OwnerActor->HasAuthority() ? TEXT("Server") : TEXT("Client"),
+		*GetName(),
+		*GetNameSafe(GetHoldingActor()));
+}
+
 void USomnusInventoryComponent::OnItemAdded(const FSomnusItemInstance& Item)
 {
-	UE_LOG(LogSomnusInventory, Log, TEXT("Item Added: %s"), Item.ItemData ? *Item.ItemData->DisplayName.ToString() : TEXT("None"));
+	UE_LOG(LogSomnusInventory, Log, TEXT("%s  Item Added: %s"), *DescribeForLog(),
+		Item.ItemData ? *Item.ItemData->DisplayName.ToString() : TEXT("None"));
 	RebuildOccupationGrid();
 	OnItemAddedDelegate.Broadcast(Item);
 }
 
 void USomnusInventoryComponent::OnItemRemoved(const FSomnusItemInstance& Item)
 {
-	UE_LOG(LogSomnusInventory, Log, TEXT("Item Removed: %s"), Item.ItemData ? *Item.ItemData->DisplayName.ToString() : TEXT("None"));
+	UE_LOG(LogSomnusInventory, Log, TEXT("%s  Item Removed: %s"), *DescribeForLog(),
+		Item.ItemData ? *Item.ItemData->DisplayName.ToString() : TEXT("None"));
 	RebuildOccupationGrid();
 	OnItemRemovedDelegate.Broadcast(Item);
 }
 
 void USomnusInventoryComponent::OnItemChanged(const FSomnusItemInstance& Item)
 {
-	UE_LOG(LogSomnusInventory, Log, TEXT("Item Changed: %s"), Item.ItemData ? *Item.ItemData->DisplayName.ToString() : TEXT("None"));
+	UE_LOG(LogSomnusInventory, Log, TEXT("%s  Item Changed: %s"), *DescribeForLog(),
+		Item.ItemData ? *Item.ItemData->DisplayName.ToString() : TEXT("None"));
 	RebuildOccupationGrid();
 	OnItemChangedDelegate.Broadcast(Item);
 }
@@ -769,4 +821,5 @@ void USomnusInventoryComponent::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	DOREPLIFETIME(USomnusInventoryComponent, InventoryList);
 	DOREPLIFETIME(USomnusInventoryComponent, GridWidth);
 	DOREPLIFETIME(USomnusInventoryComponent, GridHeight);
+	DOREPLIFETIME(USomnusInventoryComponent, AcceptedTags);
 }

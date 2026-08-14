@@ -6,6 +6,7 @@
 #include "SomnusContainerActor.h"
 #include "SomnusContainerDataAsset.h"
 #include "SomnusInventoryComponent.h"
+#include "Core/SomnusGameplayTags.h"
 #include "Inventory/SomnusEquipmentSlotComponent.h"
 #include "Inventory/SomnusItemDataAsset.h"
 #include "Inventory/SomnusPickupActor.h"
@@ -140,6 +141,18 @@ void USomnusContainerEquipComponent::BeginPlay()
 		Slot->OnItemAddedDelegate.AddDynamic(this, &USomnusContainerEquipComponent::HandleSlotContentsChanged);
 		Slot->OnItemRemovedDelegate.AddDynamic(this, &USomnusContainerEquipComponent::HandleSlotContentsChanged);
 	}
+	
+	{
+		FGameplayTagContainer RigSlotAcceptedTags;
+		RigSlotAcceptedTags.AddTag(SomnusTags::Item_Equipment_Container_Rig);
+		RigSlot->InitializeAcceptedItemTags(RigSlotAcceptedTags);
+	}
+	{
+		FGameplayTagContainer BackpackSlotAcceptedTags;
+		BackpackSlotAcceptedTags.AddTag(SomnusTags::Item_Equipment_Container_Backpack);
+		BackpackSlot->InitializeAcceptedItemTags(BackpackSlotAcceptedTags);
+	}
+
 
 	if (!GetOwner()->HasAuthority())
 	{

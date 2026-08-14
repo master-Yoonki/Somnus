@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "GameFramework/Actor.h"
 #include "SomnusContainerActor.generated.h"
 
@@ -42,6 +43,12 @@ public:
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+	
+	/** Copied from the data asset at Initialize and handed to every compartment. Not editable:
+	 *  these actors are only ever spawned for an item instance, so a value set in the editor
+	 *  would never be the one in use. */
+	UPROPERTY(BlueprintReadOnly, Category = "Inventory|Tag")
+	FGameplayTagContainer AcceptedTags;
 
 	UPROPERTY(BlueprintReadOnly, Replicated)
 	TArray<TObjectPtr<USomnusInventoryComponent>> Compartments;

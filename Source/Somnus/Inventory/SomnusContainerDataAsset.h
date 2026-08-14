@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "SomnusItemDataAsset.h"
 #include "Engine/DataAsset.h"
 #include "Inventory/SomnusItemTypes.h"
@@ -21,6 +22,9 @@ public:
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Container|Configuration")
 	EContainerSlotType SlotType = EContainerSlotType::Backpack;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Container|Configuration")
+	FGameplayTagContainer AcceptedTags;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Container|Configuration")
 	TArray<FIntPoint> CompartmentSizes;

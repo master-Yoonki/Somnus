@@ -9,6 +9,29 @@
  */
 namespace SomnusTags
 {
+	// Item type — what an item IS, matched against a container's AcceptedItemTags.
+	//
+	// Only what C++ names is declared here. Leaves like Item.Equipment.Weapon.Melee or
+	// Item.Consumable.Medical belong in the editor's tag table instead: no code asks whether
+	// something is a helmet, and declaring them natively would put the category axis back into
+	// C++ - the thing the tag filter exists to get out of it. Intermediate tags come free, since
+	// registering a leaf registers every parent along the way.
+	//
+	// The root. A container holding this accepts anything, which is the default every grid
+	// starts with; a slot resets it and is handed something narrower.
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item);
+
+	// Named because a slot is created for each of these by name, and because the storage
+	// component has to find these two in particular to work out which compartments exist.
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Container);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Container_Rig);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Container_Backpack);
+
+	// Parents, so a weapon slot accepts every weapon kind and an armour slot every armour kind
+	// without either of them hearing about a new one.
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Weapon);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Armor);
+
 	// Equipment identity
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Equipped_Weapon_Bat);
 

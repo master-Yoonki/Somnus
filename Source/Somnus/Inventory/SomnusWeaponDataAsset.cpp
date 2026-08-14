@@ -3,8 +3,11 @@
 
 #include "Inventory/SomnusWeaponDataAsset.h"
 
+#include "Core/SomnusGameplayTags.h"
+
 USomnusWeaponDataAsset::USomnusWeaponDataAsset()
 {
 	Category = EItemCategory::Weapon;
+	ItemTag = SomnusTags::Item_Equipment_Weapon;
 	MaxStackCount = 1;
 }

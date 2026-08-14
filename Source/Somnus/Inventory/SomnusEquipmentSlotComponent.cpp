@@ -13,6 +13,12 @@ bool USomnusEquipmentSlotComponent::CanFitAt(class USomnusItemDataAsset* ItemDat
 	bool bRotated, FGuid IgnoreItemID) const
 {
 	if (!ItemData) return false;
+
+	// Called rather than inherited: this override replaces the base CanFitAt outright, so the
+	// admission question would go unasked here - the one place it matters most, since a slot's
+	// whole job is to hold one particular kind of thing.
+	if (!AcceptsItem(ItemData)) return false;
+
 	if (!(TopLeftX == 0 && TopLeftY == 0)) return false;
 	for (const FSomnusItemInstance& ItemInstance : InventoryList.Items)
 	{

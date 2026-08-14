@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "Components/ActorComponent.h"
 #include "Inventory/SomnusItemInstance.h"
 #include "SomnusInventoryComponent.generated.h"
@@ -33,7 +34,21 @@ public:
 public:	
 	USomnusInventoryComponent();
 
-	virtual void InitializeComponent() override;
+	virtual void InitializeComponent() override;   
+	
+	/** Narrows what this grid will hold, once, at construction. Not authority-gated: a client sets
+	 *  the same value locally rather than waiting for the replicated one, because until it arrives
+	 *  a drag preview would happily accept things the server is about to refuse. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void InitializeAcceptedItemTags(const FGameplayTagContainer& InTags);
+
+	/** Whether this grid will hold ItemData at all - a question about kind, with nothing to say
+	 *  about room. Separate from CanFitAt because the two refusals are different: one is answered
+	 *  by emptying a cell, the other never is, and the interface wants to say which. An empty
+	 *  AcceptedTags is no restriction rather than a refusal of everything, so a plain grid that
+	 *  was never narrowed takes anything. */
+	UFUNCTION(BlueprintPure, Category = "Inventory")
+	bool AcceptsItem(class USomnusItemDataAsset* ItemData) const;
 	
 	/** Returns all items currently in the inventory (useful for UI initialization) */
 	UFUNCTION(BlueprintPure, Category = "Inventory")
@@ -138,6 +153,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory|Debug")
 	void PrintDebugGrid() const;
 
+	/** "[Server] RigSlot on BP_SomnusCharacter_C_0" - which grid, on which machine. */
+	FString DescribeForLog() const;
+
 	/** Called by ItemInstances when they are synchronized over the network */
 	void OnItemAdded(const FSomnusItemInstance& Item);
 	void OnItemRemoved(const FSomnusItemInstance& Item);
@@ -147,6 +165,9 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory|Tag", Replicated)
+	FGameplayTagContainer AcceptedTags;
+	
 	/** Rebuilds the OccupationGrid bit array from scratch based on current items */
 	virtual void RebuildOccupationGrid();
 

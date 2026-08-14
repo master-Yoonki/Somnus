@@ -23,6 +23,8 @@ void ASomnusContainerActor::Initialize(USomnusContainerDataAsset* ContainerDataA
 		return;
 	}
 	
+	AcceptedTags = ContainerDataAsset->AcceptedTags;
+	
 	const int32 NumCompartments = ContainerDataAsset->CompartmentSizes.Num();
 	Compartments.SetNum(NumCompartments);
 	for (int32 i = 0; i < NumCompartments; i++)
@@ -33,6 +35,7 @@ void ASomnusContainerActor::Initialize(USomnusContainerDataAsset* ContainerDataA
 				(this, *FString::Printf(TEXT("Compartments%d"), i));
 		
 		InventoryComponent->InitializeGridSize(CompartmentSize.X, CompartmentSize.Y);
+		InventoryComponent->InitializeAcceptedItemTags(AcceptedTags);
 		InventoryComponent->RegisterComponent();
 		Compartments[i] = InventoryComponent;
 	}
