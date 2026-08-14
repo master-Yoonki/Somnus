@@ -25,7 +25,8 @@ public class Somnus : ModuleRules
 			"AnimGraphRuntime",
 			"AIModule",
 			"NavigationSystem",
-			"PhysicsControl"
+			"PhysicsControl",
+			"DeveloperSettings"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "SlateCore" });
