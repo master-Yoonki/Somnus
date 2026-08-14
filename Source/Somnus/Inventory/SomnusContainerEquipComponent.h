@@ -37,34 +37,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	USomnusInventoryComponent* FindContainerHolding(FGuid InstanceID, FSomnusItemInstance& OutInstance) const;
 
-	/** Puts an already-formed container instance into the slot its data asset declares.
-	 *  Returns false and changes nothing when the item is not a container, declares
-	 *  Pockets, or the target slot is already occupied. Server only. */
+	/** Puts an already-formed container instance into the slot its data asset declares. Granting
+	 *  rather than equipping: the instance has just been minted and is in no grid yet, which is
+	 *  why this is not a move like every other way something reaches a slot. Returns false and
+	 *  changes nothing when the item is not a container, declares Pockets, or the slot refuses
+	 *  it. Server only. */
 	bool EquipInstance(const FSomnusItemInstance& Instance);
-	
-	/** Pulls a container item out of a grid and wears it, contents and all. TargetSlot is the
-	 *  slot the player dropped on, and a mismatch with the item's own declared slot is a
-	 *  refusal - EquipInstance would otherwise route a backpack dropped on the rig panel into
-	 *  the backpack slot. Returns false and changes nothing on any refusal. Server only. */
-	bool EquipFrom(USomnusInventoryComponent* Source, FGuid InstanceID, EContainerSlotType TargetSlot);
 
-	/** Server RPC for a drag that started on a grid and ended on an equipped slot. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Equipment|RPC")
-	void Server_EquipFrom(USomnusInventoryComponent* Source, FGuid InstanceID, EContainerSlotType TargetSlot);
+	// Nothing here equips or unequips any more. A worn slot is a grid, so a drag onto one or off
+	// one is the same cross-grid move as any other, and it goes through USomnusLootComponent's
+	// Server_MoveItem like the rest - which also means it is validated like the rest, where the
+	// pair of RPCs that used to live here took a client's word for the grid it named.
 
-	/** Takes what is worn in SlotType and drops it into a grid at a specific cell, contents
-	 *  and all. Returns false and changes nothing when the slot is empty, cannot be worn, or
-	 *  the destination refuses the placement - including the destination being storage the
-	 *  item itself provides. Public because server-side callers other than the drag RPC need
-	 *  it: dropping equipment on death is the next one. Server only. */
-	bool UnequipTo(EContainerSlotType SlotType, USomnusInventoryComponent* Destination,
-				   int32 TopLeftX, int32 TopLeftY, bool bRotated);
 
-	/** Server RPC for a drag that started on an equipped slot and ended on a grid cell. */
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Equipment|RPC")
-	void Server_UnequipTo(EContainerSlotType SlotType, USomnusInventoryComponent* Destination,
-						  int32 TopLeftX, int32 TopLeftY, bool bRotated);
-	
 	/** Takes an item away from this character and leaves it in the world in front of them,
 	 *  contents and all. Covers both places an item can be - loose in one of the grids, or worn
 	 *  in the rig or backpack slot. Returns false and changes nothing when nothing this
@@ -89,6 +74,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Equipment")
 	FSomnusItemInstance GetEquippedInstance(EContainerSlotType SlotType) const;
 
+	UFUNCTION(BlueprintCallable, Category = "Equipment")
+	class USomnusEquipmentSlotComponent* GetSlot(EContainerSlotType SlotType) const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Equipment")
+	class ASomnusContainerActor* GetEquippedContainer(EContainerSlotType SlotType) const;
+	
 protected:
 	// Called when the game starts
 	virtual void BeginPlay() override;
@@ -125,28 +116,29 @@ protected:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Pocket)
 	TObjectPtr<ASomnusContainerActor> Pocket;
 	
-	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_EquippedRig)
-	FSomnusItemInstance EquippedRig;
-	
-	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_EquippedBackpack)
-	FSomnusItemInstance EquippedBackpack;
-	
+	/** What is worn now lives in these rather than in a replicated FSomnusItemInstance of its own.
+	 *  Constructor subobjects rather than anything replicated: both machines build their own at the
+	 *  same path, so the pointer is valid everywhere from construction and there is nothing for an
+	 *  OnRep to announce - the contents replicate through the grid each one already is. Pocket next
+	 *  door is spawned at runtime from a data asset, which is the only reason it needs telling. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
+	TObjectPtr<class USomnusEquipmentSlotComponent> RigSlot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Equipment")
+	TObjectPtr<class USomnusEquipmentSlotComponent> BackpackSlot;
+
 	UFUNCTION()
 	void OnRep_Pocket();
-	
-	UFUNCTION()
-	void OnRep_EquippedRig(FSomnusItemInstance Old);
 
+	/** Bound to both slots' add and remove delegates, on every machine. Replaces the hand-called
+	 *  notify the replicated slots needed: a grid tells its listeners itself, and it tells them on
+	 *  the authority too, so the listen server host stops being the one window that never
+	 *  refreshed. Teardown for equipment leaving a slot hooks up here. */
 	UFUNCTION()
-	void OnRep_EquippedBackpack(FSomnusItemInstance Old);
-	
-	/** Reaction to an equipped slot changing. Driven by the OnReps on clients, and called
-	 *  directly on the server, which never receives them. */
-	void HandleEquippedChanged(EContainerSlotType SlotType, const FSomnusItemInstance& OldInstance);
+	void HandleSlotContentsChanged(const FSomnusItemInstance& Item);
 
-	/** Writable counterpart of GetEquippedInstance, for the paths that change what is worn.
-	 *  Null for a slot that cannot be worn. Protected on purpose: it hands out a pointer
-	 *  straight into a replicated member, and writing through it without going on to call
-	 *  HandleEquippedChanged leaves every listener looking at the previous state. */
-	FSomnusItemInstance* GetEquippedInstanceMutable(EContainerSlotType SlotType);
+	// No writable counterpart to GetEquippedInstance any more. What is worn is an entry in a
+	// replicated grid now, so it is written the way every other item is - through the slot's own
+	// Add/Move/Remove, which mark the list dirty and notify. A raw pointer into the array would
+	// skip both.
 };

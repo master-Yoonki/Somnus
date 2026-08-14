@@ -6,7 +6,8 @@
 #include "SomnusContainerActor.h"
 #include "SomnusContainerDataAsset.h"
 #include "SomnusInventoryComponent.h"
-#include "SomnusItemDataAsset.h"
+#include "Inventory/SomnusEquipmentSlotComponent.h"
+#include "Inventory/SomnusItemDataAsset.h"
 #include "Inventory/SomnusPickupActor.h"
 #include "Net/UnrealNetwork.h"
 
@@ -18,6 +19,8 @@ USomnusContainerEquipComponent::USomnusContainerEquipComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
 	PickupActorClass = ASomnusPickupActor::StaticClass();
+	RigSlot = CreateDefaultSubobject<USomnusEquipmentSlotComponent>("RigSlot");
+	BackpackSlot = CreateDefaultSubobject<USomnusEquipmentSlotComponent>("BackpackSlot");
 	// ...
 }
 
@@ -25,9 +28,9 @@ void USomnusContainerEquipComponent::GetLifetimeReplicatedProps(TArray<class FLi
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	
+	// Only Pocket. The two slots are constructor subobjects that exist on every machine already,
+	// and what is in them replicates as the grid contents it is.
 	DOREPLIFETIME(USomnusContainerEquipComponent, Pocket);
-	DOREPLIFETIME(USomnusContainerEquipComponent, EquippedBackpack);
-	DOREPLIFETIME(USomnusContainerEquipComponent, EquippedRig);
 }
 
 TArray<FSomnusActiveContainerInfo> USomnusContainerEquipComponent::GetActiveContainers() const
@@ -59,24 +62,24 @@ TArray<FSomnusActiveContainerInfo> USomnusContainerEquipComponent::GetActiveCont
 		AddCompartmentsInfo(EContainerSlotType::Pockets, PocketData, Compartments);
 	}
 
-	if (EquippedBackpack.InstanceID.IsValid())
+	// The slots themselves are deliberately not listed here. This answers "what storage can hold a
+	// loose item", which is what TryAddItemAnywhere walks - and a rig slot that appeared in it
+	// would swallow the first bandage that did not fit a pocket. The UI needs the slots too, but
+	// that is a different question and gets its own answer when the panels are built.
+	const FSomnusItemInstance WornBackpack = GetEquippedInstance(EContainerSlotType::Backpack);
+	if (WornBackpack.ContainerActor)
 	{
-		if (TObjectPtr<ASomnusContainerActor> Container = EquippedBackpack.ContainerActor)
-		{
-			TArray<USomnusInventoryComponent*> Compartments = Container->GetCompartments();
-			AddCompartmentsInfo(EContainerSlotType::Backpack, EquippedBackpack.ItemData, Compartments);
-		}
+		TArray<USomnusInventoryComponent*> Compartments = WornBackpack.ContainerActor->GetCompartments();
+		AddCompartmentsInfo(EContainerSlotType::Backpack, WornBackpack.ItemData, Compartments);
 	}
 
-	if (EquippedRig.InstanceID.IsValid())
+	const FSomnusItemInstance WornRig = GetEquippedInstance(EContainerSlotType::Rig);
+	if (WornRig.ContainerActor)
 	{
-		if (TObjectPtr<ASomnusContainerActor> Container = EquippedRig.ContainerActor)
-		{
-			TArray<USomnusInventoryComponent*> Compartments = Container->GetCompartments();
-			AddCompartmentsInfo(EContainerSlotType::Rig, EquippedRig.ItemData, Compartments);
-		}
+		TArray<USomnusInventoryComponent*> Compartments = WornRig.ContainerActor->GetCompartments();
+		AddCompartmentsInfo(EContainerSlotType::Rig, WornRig.ItemData, Compartments);
 	}
-	
+
 	return ContainerInfos;
 }
 
@@ -104,10 +107,39 @@ USomnusInventoryComponent* USomnusContainerEquipComponent::FindContainerHolding(
 	return nullptr;
 }
 
+class ASomnusContainerActor* USomnusContainerEquipComponent::GetEquippedContainer(EContainerSlotType SlotType) const
+{
+	if (SlotType == EContainerSlotType::Pockets)
+	{
+		return Pocket;
+	}
+	else if (USomnusEquipmentSlotComponent* EquipmentSlot = GetSlot(SlotType))
+	{
+		if (!EquipmentSlot->GetAllItems().IsEmpty())
+		{
+			FSomnusItemInstance EquippedItemInstance = EquipmentSlot->GetAllItems()[0];
+			return EquippedItemInstance.ContainerActor;
+		}
+	}
+	return nullptr;
+}
+
 // Called when the game starts
 void USomnusContainerEquipComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Before the authority gate on purpose: a client's panels have to redraw when what is worn
+	// changes, and a client never reaches anything past it.
+	for (USomnusEquipmentSlotComponent* Slot : { RigSlot.Get(), BackpackSlot.Get() })
+	{
+		if (!Slot)
+		{
+			continue;
+		}
+		Slot->OnItemAddedDelegate.AddDynamic(this, &USomnusContainerEquipComponent::HandleSlotContentsChanged);
+		Slot->OnItemRemovedDelegate.AddDynamic(this, &USomnusContainerEquipComponent::HandleSlotContentsChanged);
+	}
 
 	if (!GetOwner()->HasAuthority())
 	{
@@ -201,79 +233,31 @@ bool USomnusContainerEquipComponent::EquipInstance(const FSomnusItemInstance& In
 		return false;
 	}
 
-	FSomnusItemInstance* TargetSlot = nullptr;
-	switch (ContainerDataAsset->SlotType)
+	USomnusEquipmentSlotComponent* TargetSlot = GetSlot(ContainerDataAsset->SlotType);
+	if (!TargetSlot)
 	{
-	case EContainerSlotType::Backpack: TargetSlot = &EquippedBackpack; break;
-	case EContainerSlotType::Rig:      TargetSlot = &EquippedRig;      break;
-	default:
 		UE_LOG(LogSomnusInventory, Warning,
 			TEXT("EquipInstance: %s declares a slot that cannot be worn."),
 			*ContainerDataAsset->GetName());
 		return false;
 	}
 
-	if (TargetSlot->InstanceID.IsValid())
+	// Occupancy is not checked here any more - the slot refuses on its own, because a slot holding
+	// one item is full by definition and CanFitAt says so. A copy, because AddExistingItemAt
+	// consumes what it is given and Instance is const for the caller's sake.
+	FSomnusItemInstance ItemToEquip = Instance;
+	if (TargetSlot->AddExistingItemAt(ItemToEquip, 0, 0, false) != 0)
 	{
 		UE_LOG(LogSomnusInventory, Log,
-			TEXT("EquipInstance: the slot for %s is already occupied - unequip it first."),
+			TEXT("EquipInstance: the slot for %s refused it - most likely already occupied."),
 			*ContainerDataAsset->GetName());
 		return false;
 	}
 
-	const FSomnusItemInstance OldInstance = *TargetSlot;
+	// After the placement, never before: storage follows its holder so relevancy keeps resolving
+	// and permission keeps answering, and a refused equip must leave both pointing where they were.
 	Instance.ContainerActor->SetOwner(GetOwner());
-	*TargetSlot = Instance;
-
-	HandleEquippedChanged(ContainerDataAsset->SlotType, OldInstance);
 	return true;
-}
-
-bool USomnusContainerEquipComponent::EquipFrom(USomnusInventoryComponent* Source, FGuid InstanceID, EContainerSlotType TargetSlot)
-{
-	if (!GetOwner() || !GetOwner()->HasAuthority()) return false; 
-	if (!Source) return false;
-	if (!InstanceID.IsValid()) return false;
-	
-	FSomnusItemInstance InstanceToEquip;
-	if (!Source->FindItemByID(InstanceID, InstanceToEquip))
-	{
-		return false;
-	}
-
-	// The drop landed on one particular panel, so confirm the player asked for the slot this
-	// item actually belongs in. EquipInstance routes off the asset alone and would happily
-	// wear a backpack dropped on the rig panel - that is the equipment model's rule, and this
-	// is the UI's intent. Two different layers, checked in two different places.
-	const USomnusContainerDataAsset* ContainerDataAsset = Cast<USomnusContainerDataAsset>(InstanceToEquip.ItemData);
-	if (!ContainerDataAsset || ContainerDataAsset->SlotType != TargetSlot)
-	{
-		return false;
-	}
-
-	if (!EquipInstance(InstanceToEquip))
-	{
-		return false;
-	}
-
-	// Add first, remove second, so a refused equip leaves the item exactly where it was.
-	// RemoveItem can only miss when the id is no longer in Source at all, which means a
-	// listener woken by the equip moved it somewhere else - and undoing the equip at that
-	// point would delete the item outright rather than undo anything, since Source no longer
-	// holds a copy to fall back on. So this stays loud instead of clever.
-	const bool bRemovedFromSource = Source->RemoveItem(InstanceID);
-	ensureMsgf(bRemovedFromSource,
-		TEXT("EquipFrom: %s was equipped but %s never released it - the item may now exist twice."),
-		*ContainerDataAsset->GetName(), *GetNameSafe(Source));
-
-	return true;
-}
-
-void USomnusContainerEquipComponent::Server_EquipFrom_Implementation(USomnusInventoryComponent* Source,
-	FGuid InstanceID, EContainerSlotType TargetSlot)
-{
-	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
-	EquipFrom(Source, InstanceID, TargetSlot);
 }
 
 int32 USomnusContainerEquipComponent::TryAddItemAnywhere(USomnusItemDataAsset* ItemDataAsset, int32 Quantity)
@@ -339,26 +323,26 @@ int32 USomnusContainerEquipComponent::TryAddExistingItemAnywhere(FSomnusItemInst
 
 FSomnusItemInstance USomnusContainerEquipComponent::GetEquippedInstance(EContainerSlotType SlotType) const
 {
-	if (SlotType == EContainerSlotType::Backpack)
+	const USomnusEquipmentSlotComponent* Slot = GetSlot(SlotType);
+	if (!Slot)
 	{
-		return EquippedBackpack;
+		return FSomnusItemInstance();
 	}
-	else if (SlotType == EContainerSlotType::Rig)
-	{
-		return EquippedRig;
-	}
-	return FSomnusItemInstance();
+
+	// A slot holds one item or none, so the first entry is the whole answer.
+	const TArray<FSomnusItemInstance> Worn = Slot->GetAllItems();
+	return Worn.Num() > 0 ? Worn[0] : FSomnusItemInstance();
 }
 
-FSomnusItemInstance* USomnusContainerEquipComponent::GetEquippedInstanceMutable(EContainerSlotType SlotType)
+class USomnusEquipmentSlotComponent* USomnusContainerEquipComponent::GetSlot(EContainerSlotType SlotType) const
 {
 	if (SlotType == EContainerSlotType::Backpack)
 	{
-		return &EquippedBackpack;
+		return BackpackSlot;
 	}
 	else if (SlotType == EContainerSlotType::Rig)
 	{
-		return &EquippedRig;
+		return RigSlot;
 	}
 	return nullptr;
 }
@@ -381,64 +365,12 @@ void USomnusContainerEquipComponent::OnRep_Pocket()
 	OnActiveContainersChangedDelegate.Broadcast();
 }
 
-void USomnusContainerEquipComponent::OnRep_EquippedRig(FSomnusItemInstance Old)
+void USomnusContainerEquipComponent::HandleSlotContentsChanged(const FSomnusItemInstance& Item)
 {
-	HandleEquippedChanged(EContainerSlotType::Rig, Old);
-}
-
-void USomnusContainerEquipComponent::OnRep_EquippedBackpack(FSomnusItemInstance Old)
-{
-	HandleEquippedChanged(EContainerSlotType::Backpack, Old);
-}
-
-void USomnusContainerEquipComponent::HandleEquippedChanged(EContainerSlotType SlotType, const FSomnusItemInstance& OldInstance)
-{
-	// The set of active containers just changed. Teardown for OldInstance hooks up here.
-
-	// Broadcast last, so listeners see the finished state rather than a half-updated one, and
-	// from here rather than from the OnReps - a server never receives those, so on a listen
-	// server the host's own UI would be the one window that never refreshed.
+	// Whatever a slot now holds decides which compartments exist, so the active set just changed.
+	// Reached by delegate on every machine, which is what makes the old pairing of an OnRep for
+	// clients and a hand call for the authority unnecessary.
 	OnActiveContainersChangedDelegate.Broadcast();
-}
-
-bool USomnusContainerEquipComponent::UnequipTo(EContainerSlotType SlotType, USomnusInventoryComponent* Destination,
-	int32 TopLeftX, int32 TopLeftY, bool bRotated)
-{
-	if (!GetOwner() || !GetOwner()->HasAuthority()) return false;
-	if (!Destination) return false;
-
-	FSomnusItemInstance* Slot = GetEquippedInstanceMutable(SlotType);
-	if (!Slot) return false;
-	if (!Slot->InstanceID.IsValid()) return false;
-	if (!Slot->ItemData) return false;
-
-	// Hand the placement a copy, never the slot itself. AddExistingItemAt consumes what it is
-	// given in place, so aliasing the slot would spend a replicated member down before we know
-	// whether the move is even allowed - and no OnRep would ever correct it, because the server
-	// would be the one holding the wrong value. Same reason MoveItemFrom copies out of Source.
-	FSomnusItemInstance ItemToMove = *Slot;
-
-	// Containers are MaxStackCount == 1, so the placement takes the whole thing or none of it -
-	// there is no partial merge that could legitimately leave a remainder. Anything non-zero
-	// means the destination refused (no room, or it is storage this very item provides), and
-	// the slot keeps what it had. Give containers a stack count above 1 and this stops holding.
-	const int32 LeftOver = Destination->AddExistingItemAt(ItemToMove, TopLeftX, TopLeftY, bRotated);
-	if (LeftOver != 0)
-	{
-		return false;
-	}
-
-	// Read the slot, not ItemToMove: the placement above spent that copy down to zero.
-	const FSomnusItemInstance OldInstance = *Slot;
-	*Slot = FSomnusItemInstance();
-
-	// No SetOwner here, and that is a decision rather than an omission. The destination grid
-	// belongs to this character or to one of its container actors, so the storage's root holder
-	// comes out as the actor it already had. The day equipment can be unequipped straight into
-	// a corpse or a world container, this is the line that has to start following it.
-
-	HandleEquippedChanged(SlotType, OldInstance);
-	return true;
 }
 
 bool USomnusContainerEquipComponent::DropItem(FGuid InstanceID)
@@ -462,21 +394,20 @@ bool USomnusContainerEquipComponent::DropItem(FGuid InstanceID)
 	FSomnusItemInstance Dropping;
 	USomnusInventoryComponent* HoldingContainer = FindContainerHolding(InstanceID, Dropping);
 
-	// Worn equipment lives in a slot rather than in any grid, so the search above cannot see it.
-	// An empty slot holds an invalid id, which the valid-id guard at the top already excluded
-	// from matching.
-	FSomnusItemInstance* WornSlot = nullptr;
-	EContainerSlotType WornSlotType = EContainerSlotType::Pockets;
+	// Worn equipment is in a grid too now, but not one GetActiveContainers lists - the slots stay
+	// out of that answer so loose items never land in them - so the search above still cannot see
+	// it and this second look is still needed.
+	USomnusEquipmentSlotComponent* WornSlot = nullptr;
 	if (!HoldingContainer)
 	{
 		for (const EContainerSlotType SlotType : { EContainerSlotType::Rig, EContainerSlotType::Backpack })
 		{
-			FSomnusItemInstance* Slot = GetEquippedInstanceMutable(SlotType);
-			if (Slot && Slot->InstanceID == InstanceID)
+			USomnusEquipmentSlotComponent* Slot = GetSlot(SlotType);
+			FSomnusItemInstance Worn;
+			if (Slot && Slot->FindItemByID(InstanceID, Worn))
 			{
-				Dropping = *Slot;
+				Dropping = Worn;
 				WornSlot = Slot;
-				WornSlotType = SlotType;
 				break;
 			}
 		}
@@ -499,7 +430,7 @@ bool USomnusContainerEquipComponent::DropItem(FGuid InstanceID)
 	const FRotator DropRotation(0.f, FMath::FRandRange(0.f, 360.f), 0.f);
 	const FTransform SpawnTransform(DropRotation, DropLocation);
 
-	// Spawn first, release second - the rule EquipFrom and MoveItemFrom follow for the same
+	// Spawn first, release second - the rule MoveItemFrom follows for the same
 	// reason. Taking the item away before its replacement exists destroys it outright whenever
 	// the spawn is the thing that fails.
 	//
@@ -521,29 +452,14 @@ bool USomnusContainerEquipComponent::DropItem(FGuid InstanceID)
 	Pickup->InitializeFromInstance(&Dropping);
 	Pickup->FinishSpawning(SpawnTransform);
 
-	if (WornSlot)
-	{
-		// Same teardown UnequipTo does, minus a destination grid: clear the slot, then let the
-		// listeners see the finished state.
-		const FSomnusItemInstance OldInstance = *WornSlot;
-		*WornSlot = FSomnusItemInstance();
-		HandleEquippedChanged(WornSlotType, OldInstance);
-	}
-	else
-	{
-		// Loud rather than clever, for the reason EquipFrom spells out: by this point the pickup
-		// already holds the item, so a miss here means it exists twice and no undo can help.
-		const bool bRemoved = HoldingContainer->RemoveItem(InstanceID);
-		ensureMsgf(bRemoved,
-			TEXT("DropItem: %s was handed to a pickup but %s never released it - the item may now exist twice."),
-			*GetNameSafe(Dropping.ItemData), *GetNameSafe(HoldingContainer));
-	}
+	// Both places an item can be release it the same way now, so there is one path rather than two.
+	// Loud rather than clever: by this point the pickup already holds the item, so a miss here
+	// means it exists twice and no undo can help.
+	USomnusInventoryComponent* Releasing = WornSlot ? static_cast<USomnusInventoryComponent*>(WornSlot) : HoldingContainer;
+	const bool bReleased = Releasing->RemoveItem(InstanceID);
+	ensureMsgf(bReleased,
+		TEXT("DropItem: %s was handed to a pickup but %s never released it - the item may now exist twice."),
+		*GetNameSafe(Dropping.ItemData), *GetNameSafe(Releasing));
 
 	return true;
-}
-
-void USomnusContainerEquipComponent::Server_UnequipTo_Implementation(EContainerSlotType SlotType,
-                                                                     USomnusInventoryComponent* Destination, int32 TopLeftX, int32 TopLeftY, bool bRotated)
-{
-	UnequipTo(SlotType, Destination, TopLeftX, TopLeftY, bRotated);
 }
