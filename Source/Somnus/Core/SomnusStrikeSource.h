@@ -26,10 +26,10 @@ struct FSomnusStrikeSourceInfo
 	
 	// Weight of the mesh, used for calculating impulse when it hit
 	UPROPERTY(EditDefaultsOnly)
-	float Weight;
+	float Weight = 0.f;
 	
 	UPROPERTY(EditDefaultsOnly)
-	float TraceRadius;
+	float TraceRadius = 10.f;
 };
 /**
  * 
