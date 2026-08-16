@@ -249,27 +249,26 @@ void ASomnusCharacter::SwitchWeapon(int32 SlotIndex)
 
 void ASomnusCharacter::ServerSwitchWeapon_Implementation(int32 SlotIndex)
 {
+	if (!EquipmentComponent) return;
+	
 	ASomnusWeapon* OldWeapon = EquippedWeapon;
-
 	// Unequip current weapon
-	if (EquippedWeapon)
+	if (OldWeapon)
 	{
-		EquippedWeapon->Unequip();
+		OldWeapon->Unequip();
 		EquippedWeapon = nullptr;
 	}
-
-	// SlotIndex 0 = unarmed, 1+ = weapon index
-	if (SlotIndex > 0 && WeaponInventory.IsValidIndex(SlotIndex - 1))
+	ASomnusWeapon* NewWeapon = EquipmentComponent->GetCarriedWeapon(SlotIndex);
+	if (NewWeapon)
 	{
-		ASomnusWeapon* NewWeapon = WeaponInventory[SlotIndex - 1];
+		EquippedWeapon = NewWeapon;
+
 		if (NewWeapon)
 		{
 			NewWeapon->Equip(this);
 			EquippedWeapon = NewWeapon;
 		}
 	}
-
-	// Anim layers — OnRep doesn't fire on the server, so call manually
 	UpdateWeaponAnimLayers(OldWeapon, EquippedWeapon);
 }
 
