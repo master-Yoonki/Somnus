@@ -19,7 +19,7 @@
  * slot is free, never whether it has room. GridWidth and GridHeight are held at 1x1 so the
  * inherited helpers keep answering sensibly, but nothing here decides anything from them.
  */
-UCLASS(BlueprintType, meta=(BlueprintSpawnableComponent))
+UCLASS(BlueprintType, HideCategories = (Inventory, Slot), meta = (BlueprintSpawnableComponent))
 class SOMNUS_API USomnusEquipmentSlotComponent : public USomnusInventoryComponent
 {
 	GENERATED_BODY()
@@ -76,13 +76,15 @@ public:
 protected:
 	virtual void RebuildOccupationGrid() override;
 
-	// Not replicated: InitializeSlot runs on every machine, so there is nothing to send.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Slot")
+	/** Written by InitializeSlot and by nothing else - no Edit specifier, so the details panel does
+	 *  not offer four rows per slot that an owning component overwrites the moment play starts.
+	 *  Not replicated either, for the same reason: InitializeSlot runs on every machine. */
+	UPROPERTY(BlueprintReadOnly, Category = "Slot")
 	FGameplayTag SlotTag;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Slot|UI")
+	UPROPERTY(BlueprintReadOnly, Category = "Slot")
 	FText SlotLabel;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Slot")
+	UPROPERTY(BlueprintReadOnly, Category = "Slot")
 	bool bLocked = false;
 };
