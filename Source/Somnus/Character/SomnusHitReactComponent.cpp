@@ -11,7 +11,7 @@
 
 USomnusHitReactComponent::USomnusHitReactComponent()
 {
-	SetIsReplicated( true );
+	SetIsReplicatedByDefault(true);
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 	
