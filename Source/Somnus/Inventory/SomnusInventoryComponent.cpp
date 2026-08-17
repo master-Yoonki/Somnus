@@ -451,12 +451,20 @@ bool USomnusInventoryComponent::RemoveItem(FGuid InstanceID)
 	{
 		if (It->InstanceID == InstanceID)
 		{
-			// Broadcast before removing so delegates can still read item data
-			OnItemRemoved(*It);
+			// A copy, then the removal, then the notice - in that order, and the copy is what makes
+			// the order possible. Announcing the removal while the entry was still in the array let
+			// a listener be told an item had left and then find it by re-reading the grid, which is
+			// how a weapon dragged out of its slot kept the actor that stood for it: the reconcile
+			// pass saw the slot still holding what it had just been told was gone, decided nothing
+			// had changed, and never retired anything.
+			const FSomnusItemInstance Removed = *It;
+
 			InventoryList.Items.RemoveAt(It.GetIndex());
 			InventoryList.MarkArrayDirty();
-			RebuildOccupationGrid();
-			// PrintDebugGrid();
+
+			// Rebuilds the occupation grid before it broadcasts, so listeners read a grid that
+			// agrees with the list.
+			OnItemRemoved(Removed);
 			return true;
 		}
 	}
