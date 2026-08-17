@@ -168,6 +168,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
 	ASomnusWeapon* GetEquippedWeapon() const { return EquippedWeapon; }
 
+	/** Called by the equipment component when a carried weapon is about to be destroyed - most
+	 *  often because it was dragged out of its slot while it was in a hand. Does nothing unless
+	 *  that weapon is the one currently drawn.
+	 *
+	 *  Not a request to unequip: the caller already did that while the actor could still hand its
+	 *  abilities back. This is only the character stopping pointing at it. */
+	void NotifyCarriedWeaponRetiring(ASomnusWeapon* Weapon);
+
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	TArray<struct FSomnusActiveContainerInfo> GetActiveContainers() const;
 	
@@ -178,7 +186,9 @@ public:
 	 *  component's question, not this one's. */
 	virtual void Interact_Implementation(AActor* Interactor) override;
 
-	// Switch weapon slot: 0 = unarmed, 1+ = weapon index in WeaponClasses.
+	// Which worn slot to draw from, in the indices USomnusEquipmentComponent::GetWeaponSlot
+	// defines: 0 is primary, 1 is secondary. An index no slot answers to holsters, so there is no
+	// separate "unarmed" index that has to be kept in step with how many slots exist.
 	// Safe to call from client — routes to ServerSwitchWeapon.
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
 	void SwitchWeapon(int32 SlotIndex);
@@ -198,12 +208,6 @@ public:
 	UFUNCTION(Exec)
 	void SomnusDumpContainers();
 
-	// TEMPORARY - equip slot isolation proof. Runs the whole risk check server-side and prints
-	// PASS/FAIL per assertion, including a count of error log lines, which is the only way the
-	// missing RebuildOccupationGrid override announces itself. Delete once the result is recorded.
-	UFUNCTION(Exec)
-	void SomnusSlotProof();
-
 protected:
 	// GEs applied to the ASC at possession (e.g., stamina regen, passive buffs)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
@@ -216,14 +220,6 @@ protected:
 	// Default full body locomotion layer (ABP_UnarmedLocomotion — always re-linked on unequip)
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
 	TSubclassOf<UAnimInstance> DefaultLocomotionLayerClass;
-
-	// Weapon classes available (configured in BP)
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon")
-	TArray<TSubclassOf<ASomnusWeapon>> WeaponClasses;
-
-	// Spawned weapon instances (persistent inventory)
-	UPROPERTY(Transient, Replicated)
-	TArray<TObjectPtr<ASomnusWeapon>> WeaponInventory;
 
 	// Currently equipped weapon (null = unarmed)
 	UPROPERTY(Transient, ReplicatedUsing = OnRep_EquippedWeapon)

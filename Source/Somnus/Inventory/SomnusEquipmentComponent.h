@@ -69,6 +69,13 @@ public:
 	 *  the character. */
 	ASomnusWeapon* GetCarriedWeapon(int32 SlotIndex) const;
 
+	/** Puts an already-formed instance into the first slot here that admits it and has nothing in
+	 *  it, in GetWeaponSlots order - so a gun with both hands free goes to the primary rather than
+	 *  to whichever slot the component array happened to yield first. Returns false and changes
+	 *  nothing when no slot will have it, which is the ordinary answer for most items and not a
+	 *  fault. Server only. */
+	bool EquipInstance(const FSomnusItemInstance& Instance);
+
 protected:
 	virtual void InitializeComponent() override;
 	virtual void BeginPlay() override;
@@ -76,9 +83,7 @@ protected:
 	
 	UFUNCTION(Server, Reliable, Category = "Equipment")
 	void Server_EquipInstance(const FSomnusItemInstance& Instance);
-	
-	bool EquipInstance(const FSomnusItemInstance& Instance);
-	
+
 	TArray<USomnusEquipmentSlotComponent*> GetSlots() const;
 
 	/** Constructor subobjects, and named members rather than an array: a plain object property
@@ -120,7 +125,8 @@ private:
 
 	/** Tears down whatever SlotTag carries. Unequip runs before the destroy, while the actor is
 	 *  still alive to hand its abilities and loose tags back to the ability system it granted them
-	 *  to; destroying first would leave both behind permanently. */
+	 *  to; destroying first would leave both behind permanently. The wearer is told in between,
+	 *  because an actor that is about to stop existing is still the one their hand is pointing at. */
 	void RetireCarriedWeapon(FGameplayTag SlotTag);
 
 	/** Keyed by slot tag rather than by index, so the mapping from index to slot lives in

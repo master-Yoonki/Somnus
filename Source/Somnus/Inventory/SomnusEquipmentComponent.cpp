@@ -3,6 +3,7 @@
 
 #include "Inventory/SomnusEquipmentComponent.h"
 
+#include "Character/SomnusCharacter.h"
 #include "Core/SomnusGameplayTags.h"
 #include "Engine/World.h"
 #include "Equipment/SomnusWeapon.h"
@@ -202,9 +203,13 @@ void USomnusEquipmentComponent::SyncCarriedWeapons()
 		const TArray<FSomnusItemInstance> Worn = Slot->GetAllItems();
 		const FSomnusItemInstance* Desired = Worn.Num() > 0 ? &Worn[0] : nullptr;
 
+		// Nothing wanted and nothing carried is as much an agreement as the two matching, and has to
+		// be read as one - a slot that has always been empty otherwise counts as out of step on
+		// every pass and works its way down to two branches that both decline to do anything.
 		const FSomnusCarriedWeapon* Carried = CarriedWeapons.Find(SlotTag);
-		const bool bAlreadyRight = Carried && Desired && Carried->Actor
-			&& Carried->InstanceID == Desired->InstanceID;
+		const bool bAlreadyRight = Desired
+			? (Carried && Carried->Actor && Carried->InstanceID == Desired->InstanceID)
+			: (Carried == nullptr);
 
 		if (bAlreadyRight)
 		{
@@ -305,10 +310,15 @@ void USomnusEquipmentComponent::RetireCarriedWeapon(FGameplayTag SlotTag)
 	// Unequip is a no-op on a weapon that was never drawn, and on one that was it is the only
 	// thing that gives the abilities and loose tags back before the actor they were granted from
 	// stops existing.
-	//
-	// The character is still not being told. ASomnusCharacter::EquippedWeapon can be left pointing
-	// at what is about to be destroyed, and its anim layers stay linked to a weapon that is gone -
-	// clearing both belongs between these two lines and needs the character's side to change.
 	Retiring.Actor->Unequip();
+
+	// Then the wearer, while there is still an actor to name. Dropping a weapon that was in a hand
+	// is the case this exists for: the slot empties, this runs, and without the line below the
+	// character keeps pointing at destroyed memory and keeps that weapon's anim layers linked.
+	if (ASomnusCharacter* Wearer = GetOwner<ASomnusCharacter>())
+	{
+		Wearer->NotifyCarriedWeaponRetiring(Retiring.Actor);
+	}
+
 	Retiring.Actor->Destroy();
 }
