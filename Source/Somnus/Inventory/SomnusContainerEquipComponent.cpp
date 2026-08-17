@@ -169,9 +169,59 @@ void USomnusContainerEquipComponent::BeginPlay()
 		return;
 	}
 
+	// Only what cannot be taken off. The rest waits for GrantStartingKit, which the game mode calls
+	// on a first spawn and not on a respawn - a pawn that came back from the dead reaches this line
+	// looking exactly like one that never died, so the distinction cannot be made here.
+	GrantEquipment(/*bLockedSlotsOnly*/ true);
+}
+
+void USomnusContainerEquipComponent::GrantStartingKit()
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority())
+	{
+		return;
+	}
+
+	if (bStartingKitGranted)
+	{
+		return;
+	}
+	bStartingKitGranted = true;
+
+	GrantEquipment(/*bLockedSlotsOnly*/ false);
+
+	// Loose items go in last, so they can land in the storage the call above just granted.
+	for (const TPair<TObjectPtr<USomnusItemDataAsset>, int32>& Pair : DefaultItems)
+	{
+		if (!Pair.Key || Pair.Value <= 0)
+		{
+			continue;
+		}
+
+		const int32 Leftover = TryAddItemAnywhere(Pair.Key, Pair.Value);
+		if (Leftover > 0)
+		{
+			UE_LOG(LogSomnusInventory, Warning,
+				TEXT("%s: only %d of %d %s fit as default items - the rest was discarded."),
+				*GetOwner()->GetName(), Pair.Value - Leftover, Pair.Value, *Pair.Key->GetName());
+		}
+	}
+}
+
+void USomnusContainerEquipComponent::GrantEquipment(bool bLockedSlotsOnly)
+{
 	for (const TObjectPtr<USomnusContainerDataAsset>& EquipmentData : DefaultEquipment)
 	{
 		if (!EquipmentData)
+		{
+			continue;
+		}
+
+		// Which half this is decided by asking where the thing would go, not by a second list to
+		// keep in step with the first. Anything already worn leaves no empty slot that admits it,
+		// so FindSlotFor returns null and the second pass skips what the first granted.
+		const USomnusEquipmentSlotComponent* Slot = FindSlotFor(EquipmentData);
+		if (!Slot || Slot->IsLocked() != bLockedSlotsOnly)
 		{
 			continue;
 		}
@@ -192,23 +242,33 @@ void USomnusContainerEquipComponent::BeginPlay()
 			GetWorld()->DestroyActor(Instance.ContainerActor);
 		}
 	}
+}
 
-	// Loose items go in last, so they can land in the storage the loop above just granted.
-	for (const TPair<TObjectPtr<USomnusItemDataAsset>, int32>& Pair : DefaultItems)
+USomnusEquipmentSlotComponent* USomnusContainerEquipComponent::FindSlotFor(USomnusItemDataAsset* ItemData) const
+{
+	if (!ItemData || !GetOwner())
 	{
-		if (!Pair.Key || Pair.Value <= 0)
-		{
-			continue;
-		}
+		return nullptr;
+	}
 
-		const int32 Leftover = TryAddItemAnywhere(Pair.Key, Pair.Value);
-		if (Leftover > 0)
+	// Routed by asking each slot rather than by looking the item's kind up in a table. AcceptsItem
+	// is the same question a drag asks, so granting and dragging can never disagree about where
+	// something belongs, and a new kind of worn thing needs no entry anywhere. Every slot on the
+	// actor, not only this component's, because a slot is declared by whoever owns its meaning.
+	TArray<USomnusEquipmentSlotComponent*> Slots;
+	GetOwner()->GetComponents<USomnusEquipmentSlotComponent>(Slots);
+
+	for (USomnusEquipmentSlotComponent* Slot : Slots)
+	{
+		// Empty as well as willing: two weapon slots take the same things, so a kit granting two
+		// weapons has to land the second one somewhere other than where the first went.
+		if (Slot && Slot->AcceptsItem(ItemData) && Slot->GetAllItems().IsEmpty())
 		{
-			UE_LOG(LogSomnusInventory, Warning,
-				TEXT("%s: only %d of %d %s fit as default items - the rest was discarded."),
-				*GetOwner()->GetName(), Pair.Value - Leftover, Pair.Value, *Pair.Key->GetName());
+			return Slot;
 		}
 	}
+
+	return nullptr;
 }
 
 bool USomnusContainerEquipComponent::EquipInstance(const FSomnusItemInstance& Instance)
@@ -219,11 +279,11 @@ bool USomnusContainerEquipComponent::EquipInstance(const FSomnusItemInstance& In
 		return false;
 	}
 
+	// Silently, because "not something I wear" is the ordinary answer now. Anything picked up off
+	// the floor is offered here first, and most of it is bandages.
 	USomnusContainerDataAsset* ContainerDataAsset = Cast<USomnusContainerDataAsset>(Instance.ItemData);
 	if (!ContainerDataAsset)
 	{
-		UE_LOG(LogSomnusInventory, Warning, TEXT("EquipInstance: %s is not a container item."),
-			*GetNameSafe(Instance.ItemData));
 		return false;
 	}
 
@@ -235,23 +295,7 @@ bool USomnusContainerEquipComponent::EquipInstance(const FSomnusItemInstance& In
 		return false;
 	}
 
-	// Routed by asking each slot rather than by looking the item's kind up in a table. AcceptsItem
-	// is the same question a drag asks, so granting and dragging can never disagree about where
-	// something belongs, and a new kind of worn thing needs no entry anywhere.
-	USomnusEquipmentSlotComponent* TargetSlot = nullptr;
-	TArray<USomnusEquipmentSlotComponent*> Slots;
-	GetOwner()->GetComponents<USomnusEquipmentSlotComponent>(Slots);
-	for (USomnusEquipmentSlotComponent* Slot : Slots)
-	{
-		// Empty as well as willing: two weapon slots take the same things, so a kit granting two
-		// weapons has to land the second one somewhere other than where the first went.
-		if (Slot && Slot->AcceptsItem(ContainerDataAsset) && Slot->GetAllItems().IsEmpty())
-		{
-			TargetSlot = Slot;
-			break;
-		}
-	}
-
+	USomnusEquipmentSlotComponent* TargetSlot = FindSlotFor(ContainerDataAsset);
 	if (!TargetSlot)
 	{
 		UE_LOG(LogSomnusInventory, Warning,

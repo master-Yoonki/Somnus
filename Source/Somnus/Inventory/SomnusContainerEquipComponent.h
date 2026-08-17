@@ -42,8 +42,16 @@ public:
 	 *  is not a move like every other way something reaches a slot. The routing is the item's own
 	 *  tag against each slot's - no table mapping one to the other, so a new kind of worn thing is
 	 *  a data asset and a slot and nothing else. Returns false and changes nothing when no slot
-	 *  will have it. Server only. */
+	 *  will have it - including for items this component does not wear at all, which is the usual
+	 *  answer and not a fault. Server only. */
 	bool EquipInstance(const FSomnusItemInstance& Instance);
+
+	/** The equipment and loose items a player starts a life with, as opposed to what they always
+	 *  have. Called once per player by the game mode on their first spawn, never on a respawn -
+	 *  coming back empty-handed is the point of dying, and BeginPlay cannot tell the two apart
+	 *  because a respawned pawn is as new as a first one. Server only. */
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Equipment")
+	void GrantStartingKit();
 
 	// Nothing here equips or unequips any more. A worn slot is a grid, so a drag onto one or off
 	// one is the same cross-grid move as any other, and it goes through USomnusLootComponent's
@@ -148,4 +156,22 @@ protected:
 	// replicated grid now, so it is written the way every other item is - through the slot's own
 	// Add/Move/Remove, which mark the list dirty and notify. A raw pointer into the array would
 	// skip both.
+
+private:
+	/** The first slot on this actor that admits ItemData and has nothing in it, or null. The one
+	 *  place the routing rule lives, so granting and the two-pass split below cannot come to
+	 *  different answers about where something belongs. */
+	class USomnusEquipmentSlotComponent* FindSlotFor(class USomnusItemDataAsset* ItemData) const;
+
+	/** Grants the half of DefaultEquipment that lands in locked slots, or the half that does not.
+	 *
+	 *  One list read twice rather than two lists, because the difference is already recorded: a
+	 *  slot nothing can drag an item out of holds something the wearer cannot lose, so it is
+	 *  granted on every spawn, and everything else is what a death is meant to cost. Server only. */
+	void GrantEquipment(bool bLockedSlotsOnly);
+
+	/** Guards against a second GrantStartingKit. The game mode calls it once per player, but a
+	 *  repeat would mint another set of loose items into whatever room was left rather than fail
+	 *  visibly. Not replicated - the question only ever arises on the authority. */
+	bool bStartingKitGranted = false;
 };

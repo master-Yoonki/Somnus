@@ -27,6 +27,12 @@ public:
 	void RegisterCorpse(APawn* Corpse);
 
 protected:
+	/** Every way a controller gets a body arrives here - the first spawn, the one a starting match
+	 *  issues, and RequestRespawn - which is why the starting kit is handed out from this override
+	 *  and gated on the player state rather than hung off whichever of those paths looks like the
+	 *  first one. */
+	virtual void RestartPlayer(AController* NewPlayer) override;
+
 	/** How many bodies may exist at once. */
 	UPROPERTY(EditDefaultsOnly, Category = "Corpses", meta = (ClampMin = "1"))
 	int32 MaxCorpses = 16;

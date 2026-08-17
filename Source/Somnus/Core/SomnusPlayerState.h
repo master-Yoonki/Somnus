@@ -24,6 +24,14 @@ public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	USomnusAttributeSet* GetAttributeSet() const { return AttributeSet; }
 
+	/** Whether this player has already been handed the equipment a life starts with.
+	 *
+	 *  Kept here rather than on the pawn or one of its components because it has to outlive the
+	 *  pawn - that is the entire question it answers, and a respawn builds a component that would
+	 *  say "not yet" every time. Server only and not replicated: the game mode is the only thing
+	 *  that asks, and only ever on the authority. */
+	bool bHasReceivedStartingKit = false;
+
 protected:
 	// The core component that handles all GAS logic
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))

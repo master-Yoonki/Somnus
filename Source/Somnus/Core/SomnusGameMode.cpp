@@ -8,11 +8,37 @@
 #include "AbilitySystemComponent.h"
 #include "GameplayEffectTypes.h"
 #include "Core/SomnusGameplayTags.h"
+#include "Inventory/SomnusContainerEquipComponent.h"
 
 ASomnusGameMode::ASomnusGameMode()
 {
 	DefaultPawnClass = ASomnusCharacter::StaticClass();
 	PlayerStateClass = ASomnusPlayerState::StaticClass();
+}
+
+void ASomnusGameMode::RestartPlayer(AController* NewPlayer)
+{
+	Super::RestartPlayer(NewPlayer);
+
+	if (!NewPlayer) return;
+
+	// After Super, because the pawn is spawned and possessed inside it - and its components have
+	// begun play, so the slots the kit needs to land in already exist and pockets are already worn.
+	//
+	// Whether this is a first life is a fact about the player, not about the path taken to get a
+	// body: PostLogin restarts the first one, a starting match restarts whoever was waiting, and
+	// RequestRespawn restarts the dead. The player state is what survives all three to be asked.
+	ASomnusPlayerState* PS = NewPlayer->GetPlayerState<ASomnusPlayerState>();
+	if (!PS || PS->bHasReceivedStartingKit) return;
+
+	APawn* Pawn = NewPlayer->GetPawn();
+	if (!Pawn) return;
+
+	if (USomnusContainerEquipComponent* Storage = Pawn->FindComponentByClass<USomnusContainerEquipComponent>())
+	{
+		Storage->GrantStartingKit();
+		PS->bHasReceivedStartingKit = true;
+	}
 }
 
 void ASomnusGameMode::RequestRespawn(AController* Controller)
