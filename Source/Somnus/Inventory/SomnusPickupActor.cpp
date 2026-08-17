@@ -5,6 +5,7 @@
 
 #include "SomnusContainerActor.h"
 #include "Inventory/SomnusContainerEquipComponent.h"
+#include "Inventory/SomnusEquipmentComponent.h"
 #include "SomnusItemDataAsset.h"
 #include "Components/SphereComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -78,12 +79,53 @@ void ASomnusPickupActor::InitializeFromInstance(const FSomnusItemInstance* Insta
 	RefreshPickupMesh();
 }
 
+bool ASomnusPickupActor::TryWearItem(AActor* Interactor)
+{
+	// Weapons first, then storage. The two never compete - what a slot admits is a tag, and no item
+	// carries both a weapon tag and a container one - so the order between them costs nothing and
+	// only spares a second lookup for the common case.
+	if (USomnusEquipmentComponent* Equipment = Interactor->GetComponentByClass<USomnusEquipmentComponent>())
+	{
+		if (Equipment->EquipInstance(PickupItem))
+		{
+			return true;
+		}
+	}
+
+	if (USomnusContainerEquipComponent* Storage = Interactor->GetComponentByClass<USomnusContainerEquipComponent>())
+	{
+		return Storage->EquipInstance(PickupItem);
+	}
+
+	return false;
+}
+
 bool ASomnusPickupActor::PickUp(AActor* Interactor)
 {
 	if (!HasAuthority() || !Interactor || !PickupItem.InstanceID.IsValid()) return false;
 
 	USomnusContainerEquipComponent* ContainerEquipComponent = Interactor->GetComponentByClass<USomnusContainerEquipComponent>();
 	if (!ContainerEquipComponent) return false;
+
+	// Worn before stored. Reaching for a pack means putting it on, and burying it inside the pack
+	// already on your back is the fallback, not the intent. Each component is asked in turn rather
+	// than every slot on the actor at once, because the order within one is a decision it owns -
+	// a gun with both hands free belongs in the primary, and GetComponents has no opinion on that.
+	//
+	// A single item only. A slot holds one thing, so a stack landing in one would put a count
+	// somewhere with no room to express it.
+	if (PickupItem.StackCount == 1 && TryWearItem(Interactor))
+	{
+		// Storage follows its holder, and this pickup is about to stop existing. EquipInstance has
+		// already re-owned any container actor it placed; this covers the paths that did not.
+		if (PickupItem.ContainerActor)
+		{
+			PickupItem.ContainerActor->SetOwner(Interactor);
+		}
+
+		Destroy();
+		return true;
+	}
 
 	// Read the count first: TryAddExistingItemAnywhere consumes PickupItem in place, so this is
 	// the only chance to tell a partial take from an outright refusal once it returns.

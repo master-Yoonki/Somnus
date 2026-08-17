@@ -29,10 +29,14 @@ protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
-	/** Hands PickupItem to whatever storage Interactor can reach, contents and all, and
-	 *  destroys this actor once nothing is left of the stack. A partial take leaves the
-	 *  remainder standing in the world. Server only. */
+	/** Puts PickupItem on Interactor if anything they wear has an empty place for it, and hands it
+	 *  to their storage otherwise, contents and all. Destroys this actor once nothing is left of
+	 *  the stack; a partial take leaves the remainder standing in the world. Server only. */
 	bool PickUp(AActor* Interactor);
+
+	/** Offers PickupItem to each of Interactor's equipment components in turn. True when one of
+	 *  them took it, in which case the item is worn and this actor has nothing left to hold. */
+	bool TryWearItem(AActor* Interactor);
 
 	/** Turns the body loose. Deliberately not called from BeginPlay - see the comment there. */
 	void BeginPhysicsSimulation();
