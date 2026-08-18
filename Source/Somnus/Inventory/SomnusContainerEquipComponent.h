@@ -158,6 +158,13 @@ protected:
 	// skip both.
 
 private:
+	/** Destroys every container actor this character is still holding, worn ones and everything
+	 *  nested inside them. Reached by descending through the slots rather than by asking the world
+	 *  what this actor owns, which is what keeps a looter's prize out of it: a backpack that was
+	 *  carried off stopped being reachable from these slots the moment it moved, and a body must
+	 *  not take it down with itself. Server only. */
+	void DestroyHeldContainers();
+
 	/** The first slot on this actor that admits ItemData and has nothing in it, or null. The one
 	 *  place the routing rule lives, so granting and the two-pass split below cannot come to
 	 *  different answers about where something belongs. */

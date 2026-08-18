@@ -397,13 +397,72 @@ FSomnusItemInstance USomnusContainerEquipComponent::GetEquippedInstance(FGamepla
 	return Worn.Num() > 0 ? Worn[0] : FSomnusItemInstance();
 }
 
+/** Collects Root and every container actor nested inside it. Descends through the contents rather
+ *  than walking an owner chain, for the same reason SomnusInventory_IsInsideContainer does: a
+ *  container held as an item in a grid has no owner to walk. */
+static void SomnusContainer_GatherHeld(ASomnusContainerActor* Root, TArray<ASomnusContainerActor*>& Out)
+{
+	// Contains as well as null: the self-containment rule already forbids a cycle, but this walk
+	// runs while a body is being torn down and is not the place to find out it was broken.
+	if (!Root || Out.Contains(Root))
+	{
+		return;
+	}
+	Out.Add(Root);
+
+	for (USomnusInventoryComponent* Compartment : Root->GetCompartments())
+	{
+		if (!Compartment)
+		{
+			continue;
+		}
+		for (const FSomnusItemInstance& Item : Compartment->GetAllItems())
+		{
+			SomnusContainer_GatherHeld(Item.ContainerActor, Out);
+		}
+	}
+}
+
 void USomnusContainerEquipComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	Super::EndPlay(EndPlayReason);
+	// Only when this body is going away by itself. Every other reason play ends is taking the whole
+	// world with it, and these actors are already on that list.
+	//
+	// A corpse reaches this from the game mode's budget, long after it stopped being possessed,
+	// which is exactly when its storage should stop existing: until then it is what a looter is
+	// searching, and destroying it any earlier would empty a body someone is standing over.
+	if (EndPlayReason == EEndPlayReason::Destroyed && GetOwner() && GetOwner()->HasAuthority())
+	{
+		DestroyHeldContainers();
+	}
 
-	// The pocket container actor used to be torn down here by name. It is an ordinary worn item
-	// now, so it leaks exactly the way a rig does - which is the same one bug rather than two, and
-	// gets fixed once, wherever worn containers learn to clean up after their wearer.
+	Super::EndPlay(EndPlayReason);
+}
+
+void USomnusContainerEquipComponent::DestroyHeldContainers()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// Gathered whole, then destroyed. Destroying descends through the same grids this walk reads,
+	// so tearing one down mid-walk would pull the ground out from under it.
+	TArray<ASomnusContainerActor*> Held;
+	for (const USomnusEquipmentSlotComponent* Slot : GetStorageSlots())
+	{
+		if (!Slot)
+		{
+			continue;
+		}
+		SomnusContainer_GatherHeld(GetEquippedInstance(Slot->GetSlotTag()).ContainerActor, Held);
+	}
+
+	for (ASomnusContainerActor* Container : Held)
+	{
+		World->DestroyActor(Container);
+	}
 }
 
 void USomnusContainerEquipComponent::HandleSlotContentsChanged(const FSomnusItemInstance& Item)
