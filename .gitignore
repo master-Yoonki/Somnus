@@ -14,7 +14,7 @@ Build/
 *.DS_Store
 *.DotSettings.user
 # Local working notes - never commit
-HANDOFF.md
+*HANDOFF.md
 
 # Scratch assets pulled in for reference - never commit
 Content/ExampleContent/
