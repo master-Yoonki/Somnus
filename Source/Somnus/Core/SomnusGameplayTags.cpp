@@ -7,6 +7,11 @@ namespace SomnusTags
 {
 	// Item type
 	UE_DEFINE_GAMEPLAY_TAG(Item, "Item");
+	
+	UE_DEFINE_GAMEPLAY_TAG(Item_Consumable, "Item.Consumable");
+	UE_DEFINE_GAMEPLAY_TAG(Item_Consumable_Medical, "Item.Consumable.Medical");
+	UE_DEFINE_GAMEPLAY_TAG(Item_Consumable_Food, "Item.Consumable.Food");
+	
 	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Container, "Item.Equipment.Container");
 	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Container_Rig, "Item.Equipment.Container.Rig");
 	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Container_Backpack, "Item.Equipment.Container.Backpack");

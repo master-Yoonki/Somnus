@@ -3,10 +3,14 @@
 
 #include "Inventory/SomnusLootComponent.h"
 
+#include "AbilitySystemComponent.h"
 #include "SomnusContainerActor.h"
 #include "SomnusContainerEquipComponent.h"
 #include "SomnusEquipmentSlotComponent.h"
 #include "SomnusInventoryComponent.h"
+#include "SomnusItemDataAsset.h"
+#include "Character/SomnusCharacter.h"
+#include "Core/SomnusGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 
 USomnusLootComponent::USomnusLootComponent()
@@ -73,8 +77,45 @@ bool USomnusLootComponent::CanAccessContainer(const class USomnusInventoryCompon
 	return Container && CanAccessHolder(ASomnusContainerActor::ResolveRootHolder(Container->GetOwner()));
 }
 
+void USomnusLootComponent::Server_UseItem_Implementation(USomnusInventoryComponent* Source, FGuid InstanceID)
+{    
+	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+	if (!Source) return;
+	if (!CanAccessContainer(Source)) return;
+	
+	const FSomnusItemInstance* Instance = Source->FindItemInstance(InstanceID);
+	if (!Instance || !Instance->ItemData) return;
+	FGameplayTag ItemTag = Instance->ItemData->ItemTag;
+	if (!ItemTag.IsValid()) return;
+	if (!ItemTag.MatchesTag(SomnusTags::Item_Consumable)) return;
+	if (Instance->ItemData->UseEffects.IsEmpty()) return;
+	
+	ASomnusCharacter* Character = Cast<ASomnusCharacter>(GetOwner());
+	if (!Character) return;
+	
+	UAbilitySystemComponent* ASC = Character->GetAbilitySystemComponent();
+	if (!ASC) return;
+	
+	bool bAnySucceed = false;
+	for (const TSubclassOf<UGameplayEffect>& EffectClass : Instance->ItemData->UseEffects)
+	{
+		FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
+		ContextHandle.AddSourceObject(Instance->ItemData);
+		FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, 1.f, ContextHandle);
+		
+		if (ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get()).IsValid())
+		{
+			bAnySucceed = true;
+		}
+	}
+	
+	if (!bAnySucceed) return;
+
+	Source->ConsumeOneFromStack(InstanceID);
+}
+
 void USomnusLootComponent::Server_MoveItem_Implementation(USomnusInventoryComponent* Source,
-	USomnusInventoryComponent* Dest, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated)
+                                                          USomnusInventoryComponent* Dest, FGuid InstanceID, int32 TopLeftX, int32 TopLeftY, bool bRotated)
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
 	if (!Source || !Dest) return;

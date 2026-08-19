@@ -34,6 +34,9 @@ public:
 
 	/** Whether the owner may take from Container right now. */
 	bool CanAccessContainer(const class USomnusInventoryComponent* Container) const;
+	
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Consume")
+	void Server_UseItem(USomnusInventoryComponent* Source, FGuid InstanceID);
 
 	/** Fires on the owning client, and on a listen server host for its own character. Assignable
 	 *  rather than implementable because this component is a C++ subobject: there is no Blueprint

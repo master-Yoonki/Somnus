@@ -471,6 +471,27 @@ bool USomnusInventoryComponent::RemoveItem(FGuid InstanceID)
 	return false;
 }
 
+bool USomnusInventoryComponent::ConsumeOneFromStack(FGuid InstanceID)
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority()) return false;
+
+	FSomnusItemInstance* Mutable = FindItemInstanceMutable(InstanceID);
+	if (!Mutable) return false;
+
+	Mutable->StackCount -= 1;
+	if (Mutable->StackCount <= 0)
+	{
+		RemoveItem(InstanceID);
+	}
+	else
+	{
+		InventoryList.MarkItemDirty(*Mutable);
+		OnItemChanged(*Mutable);
+	}
+	return true;
+}
+
 bool USomnusInventoryComponent::TryMoveItem(FGuid InstanceID, int32 NewTopLeftX, int32 NewTopLeftY, bool bNewRotated)
 {
 	// 1. Authority Check

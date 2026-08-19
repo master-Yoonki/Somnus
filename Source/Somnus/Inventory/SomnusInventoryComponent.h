@@ -126,6 +126,14 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
 	bool RemoveItem(FGuid InstanceID);
 
+	/** Consumes one unit of the stack carrying InstanceID, removing it outright if that was the
+	 *  last one. The mutable write stays inside this class on purpose - see FindItemInstance's
+	 *  comment - so a caller reaching in from outside cannot adjust StackCount and forget to
+	 *  mark the list dirty or notify. Not exposed to Blueprint: the only caller is
+	 *  USomnusLootComponent's use-item RPC, same as OnItemAdded/Removed/Changed below have no
+	 *  BP surface either. Returns false when nothing here answers to InstanceID. Server-only. */
+	bool ConsumeOneFromStack(FGuid InstanceID);
+
 	/** Attempts to move an existing item to a new location. Server-only. */
 	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Inventory")
 	bool TryMoveItem(FGuid InstanceID, int32 NewTopLeftX, int32 NewTopLeftY, bool bNewRotated);

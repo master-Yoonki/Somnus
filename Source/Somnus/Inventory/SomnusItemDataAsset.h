@@ -75,5 +75,5 @@ public:
 	TObjectPtr<UStaticMesh> WorldMesh;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|GAS")
-	TSubclassOf<UGameplayEffect> UseEffect;
+	TArray<TSubclassOf<UGameplayEffect>> UseEffects;
 };

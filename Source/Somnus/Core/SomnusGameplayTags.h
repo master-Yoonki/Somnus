@@ -21,11 +21,16 @@ namespace SomnusTags
 	// starts with; a slot resets it and is handed something narrower.
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item);
 
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Consumable);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Consumable_Medical);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Consumable_Food);
+	
 	// Named because a slot is created for each of these by name, and because the storage
 	// component has to find these two in particular to work out which compartments exist.
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Container);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Container_Rig);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Container_Backpack);
+	
 
 	/** Pockets are a container item worn in a slot that refuses to give it up, rather than the
 	 *  fixture they used to be. The difference between them and a rig was only ever that one
