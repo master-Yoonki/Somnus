@@ -29,6 +29,17 @@ public:
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
 	
+	/** Everything this item offers, which is MenuActions plus the ones every item has. Ask this
+	 *  rather than reading MenuActions: what is stored is only the part that varies, and a menu
+	 *  built from the field alone would be missing the entries nobody had to type. */
+	UFUNCTION(BlueprintPure, Category = "Item|Actions")
+	FGameplayTagContainer GetMenuActions() const;
+
+	/** Whether this item offers Action - the one question the menu and the server both ask, so
+	 *  neither has to know that some actions are stored and some are implied. */
+	UFUNCTION(BlueprintPure, Category = "Item|Actions")
+	bool SupportsAction(FGameplayTag Action) const;
+
 	/** Returns the dimensions of the item, accounting for 90-degree rotation */
 	UFUNCTION(BlueprintPure, Category = "Item|Grid")
 	FIntPoint GetEffectiveSize(bool bRotated) const;
@@ -73,6 +84,19 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|World")
 	TObjectPtr<UStaticMesh> WorldMesh;
+
+	/** What the context menu offers for this item, beyond what every item offers.
+	 *
+	 *  ItemAction.Drop is deliberately not here: everything in a grid can be put on the floor, so
+	 *  storing it would be a row to tick on every asset ever made and a row someone eventually
+	 *  forgets. GetMenuActions adds it. If an item that cannot be dropped ever exists, it wants a
+	 *  flag saying so rather than the absence of a tag - a missing entry and a refusal read the
+	 *  same in data and mean different things.
+	 *
+	 *  A container rather than a set of bools because the menu iterates it: a new verb is a tag
+	 *  and a button, with nothing here to widen. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Actions", meta = (Categories = "ItemAction"))
+	FGameplayTagContainer MenuActions;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|GAS")
 	TArray<TSubclassOf<UGameplayEffect>> UseEffects;

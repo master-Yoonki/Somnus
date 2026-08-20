@@ -19,6 +19,12 @@ namespace SomnusTags
 	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Weapon, "Item.Equipment.Weapon");
 	UE_DEFINE_GAMEPLAY_TAG(Item_Equipment_Armor, "Item.Equipment.Armor");
 
+	// Item actions
+	UE_DEFINE_GAMEPLAY_TAG(ItemAction, "ItemAction");
+	UE_DEFINE_GAMEPLAY_TAG(ItemAction_Drop, "ItemAction.Drop");
+	UE_DEFINE_GAMEPLAY_TAG(ItemAction_Use, "ItemAction.Use");
+	UE_DEFINE_GAMEPLAY_TAG(ItemAction_Equip, "ItemAction.Equip");
+
 	// Slot identity
 	UE_DEFINE_GAMEPLAY_TAG(Equipment_Slot_Pockets, "Equipment.Slot.Pockets");
 	UE_DEFINE_GAMEPLAY_TAG(Equipment_Slot_Rig, "Equipment.Slot.Rig");

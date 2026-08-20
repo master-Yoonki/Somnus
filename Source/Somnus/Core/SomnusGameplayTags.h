@@ -44,6 +44,18 @@ namespace SomnusTags
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Weapon);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Item_Equipment_Armor);
 
+	// What can be done with an item, as opposed to what it is. A root of its own rather than a
+	// branch under Item, because a container's AcceptedTags is matched against that hierarchy and
+	// a slot that accepts Item would start accepting verbs. Same reason the slot identity tags
+	// below are separate from the item kinds above: one hierarchy, one question.
+	//
+	// Declared natively because C++ names them - the menu asks the item which of these it carries,
+	// and the server asks the same container before acting, so the two cannot drift apart.
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(ItemAction);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(ItemAction_Drop);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(ItemAction_Use);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(ItemAction_Equip);
+
 	// Which place, as opposed to what goes in it. A second hierarchy rather than a reuse of the
 	// one above, because the two weapon slots accept exactly the same things and are still not
 	// each other - what a slot admits and which slot it is are different questions the moment

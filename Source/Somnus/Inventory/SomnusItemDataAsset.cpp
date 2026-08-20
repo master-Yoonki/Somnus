@@ -3,6 +3,22 @@
 
 #include "Inventory/SomnusItemDataAsset.h"
 
+#include "Core/SomnusGameplayTags.h"
+
+FGameplayTagContainer USomnusItemDataAsset::GetMenuActions() const
+{
+	FGameplayTagContainer Actions = MenuActions;
+	Actions.AddTag(SomnusTags::ItemAction_Drop);
+	return Actions;
+}
+
+bool USomnusItemDataAsset::SupportsAction(FGameplayTag Action) const
+{
+	// Built rather than tested against MenuActions, so the implied entries answer here too. The
+	// container is a handful of tags and this is asked once per menu, not per frame.
+	return GetMenuActions().HasTag(Action);
+}
+
 FPrimaryAssetId USomnusItemDataAsset::GetPrimaryAssetId() const
 {
 	const FName AssetName = ItemId.IsNone() ? GetFName() : ItemId;
