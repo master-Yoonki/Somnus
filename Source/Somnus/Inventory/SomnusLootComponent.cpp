@@ -4,6 +4,7 @@
 #include "Inventory/SomnusLootComponent.h"
 
 #include "AbilitySystemComponent.h"
+#include "GameplayEffect.h"
 #include "SomnusContainerActor.h"
 #include "SomnusContainerEquipComponent.h"
 #include "SomnusEquipmentSlotComponent.h"
@@ -102,13 +103,22 @@ void USomnusLootComponent::Server_UseItem_Implementation(USomnusInventoryCompone
 		FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
 		ContextHandle.AddSourceObject(Instance->ItemData);
 		FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, 1.f, ContextHandle);
-		
-		if (ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get()).IsValid())
+		if (!SpecHandle.IsValid() || !SpecHandle.Data->Def) continue;
+
+		// Asked before applying rather than read from the result, because the result cannot answer
+		// it. An instant effect - which is what a heal is - never enters the active list, so it has
+		// no handle to hand back and returns an invalid one whether it healed or was refused. Every
+		// refusal that matters happens here anyway: this is the same gate the apply runs first, and
+		// where an item that would heal a wound nobody has gets turned away.
+		if (!SpecHandle.Data->Def->CanApply(ASC->GetActiveGameplayEffects(), *SpecHandle.Data.Get()))
 		{
-			bAnySucceed = true;
+			continue;
 		}
+
+		ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+		bAnySucceed = true;
 	}
-	
+
 	if (!bAnySucceed) return;
 
 	Source->ConsumeOneFromStack(InstanceID);
@@ -141,14 +151,34 @@ void USomnusLootComponent::Server_CloseLoot_Implementation()
 	SetLootTarget(nullptr);
 }
 
-void USomnusLootComponent::Server_DropFrom_Implementation(USomnusContainerEquipComponent* Source,
+void USomnusLootComponent::Server_DropFrom_Implementation(USomnusInventoryComponent* Source,
 	FGuid InstanceID)
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
-	if (!Source || !Source->GetOwner()) return;
-	if (!CanAccessHolder(Source->GetOwner())) return;
-	
-	Source->DropItem(InstanceID);
+	if (!Source) return;
+	if (!CanAccessContainer(Source)) return;
+
+	// A locked slot keeps what it holds. Checked here rather than in DropItem for the same reason
+	// Server_MoveItem checks it here: the server still empties a body through that path, and a
+	// rule about what a player may ask for must not refuse the server its own cleanup.
+	if (const USomnusEquipmentSlotComponent* Slot = Cast<USomnusEquipmentSlotComponent>(Source))
+	{
+		if (Slot->IsLocked()) return;
+	}
+
+	// Whoever is holding the grid does the dropping, so the item lands where it was - a body's
+	// belongings at the body, not at the feet of whoever went through its pockets. Containers
+	// nest, so the question only has an answer at the root of the chain.
+	AActor* Holder = ASomnusContainerActor::ResolveRootHolder(Source->GetOwner());
+	USomnusContainerEquipComponent* Storage =
+		Holder ? Holder->FindComponentByClass<USomnusContainerEquipComponent>() : nullptr;
+
+	// No storage component means nothing here is wearing anything - a bag lying in the world, say.
+	// An item inside one of those is already on the floor in every sense the player cares about,
+	// and taking it out is a move rather than a drop.
+	if (!Storage) return;
+
+	Storage->DropItem(InstanceID);
 }
 
 void USomnusLootComponent::OnRep_LootTarget()

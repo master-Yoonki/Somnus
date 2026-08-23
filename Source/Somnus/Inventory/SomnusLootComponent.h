@@ -54,8 +54,16 @@ public:
 		int32 TopLeftY, 
 		bool bRotated);
 
+	/** Puts one item on the floor, wherever it currently sits - loose in a grid, worn in a slot,
+	 *  or held by a body this character can reach.
+	 *
+	 *  Named by the grid holding it rather than by the component doing the dropping, so it takes
+	 *  the same pair as Server_UseItem and Server_MoveItem: the caller is a widget standing for
+	 *  one item, and that is what a widget knows. It also makes the reach check the same one the
+	 *  other two run, which is what stops a body out of arm's length from being emptied onto the
+	 *  floor from across the room. */
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category = "Loot")
-	void Server_DropFrom(class USomnusContainerEquipComponent* Source, FGuid InstanceID);
+	void Server_DropFrom(USomnusInventoryComponent* Source, FGuid InstanceID);
 	
 protected:
 	UPROPERTY(ReplicatedUsing = OnRep_LootTarget)
