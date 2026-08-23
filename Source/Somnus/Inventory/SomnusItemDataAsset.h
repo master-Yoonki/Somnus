@@ -23,6 +23,7 @@ class SOMNUS_API USomnusItemDataAsset : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+	USomnusItemDataAsset();
 	virtual FPrimaryAssetId GetPrimaryAssetId() const override;
 	
 #if WITH_EDITOR
@@ -36,9 +37,13 @@ public:
 	FGameplayTagContainer GetMenuActions() const;
 
 	/** Whether this item offers Action - the one question the menu and the server both ask, so
-	 *  neither has to know that some actions are stored and some are implied. */
+	 *  neither has to know that some actions are stored and some are implied.
+	 *
+	 *  The parameter is filtered to ItemAction so the Blueprint pin offers verbs and nothing else.
+	 *  A tag from another hierarchy is not an error, it just answers no forever, which is the kind
+	 *  of wrong that survives a playtest - so the picker refuses it up front. */
 	UFUNCTION(BlueprintPure, Category = "Item|Actions")
-	bool SupportsAction(FGameplayTag Action) const;
+	bool SupportsAction(UPARAM(meta = (Categories = "ItemAction")) FGameplayTag Action) const;
 
 	/** Returns the dimensions of the item, accounting for 90-degree rotation */
 	UFUNCTION(BlueprintPure, Category = "Item|Grid")

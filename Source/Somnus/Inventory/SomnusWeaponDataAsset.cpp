@@ -9,5 +9,6 @@ USomnusWeaponDataAsset::USomnusWeaponDataAsset()
 {
 	Category = EItemCategory::Weapon;
 	ItemTag = SomnusTags::Item_Equipment_Weapon;
+	MenuActions.AddTag(SomnusTags::ItemAction_Equip);
 	MaxStackCount = 1;
 }
