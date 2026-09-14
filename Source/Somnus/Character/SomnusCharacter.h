@@ -9,6 +9,7 @@
 #include "InputActionValue.h"
 #include "Core/SomnusStrikeSource.h"
 #include "Core/SomnusInteractable.h"
+#include "Character/SomnusMovementTypes.h"
 #include "SomnusCharacter.generated.h"
 
 class ASomnusWeapon;
@@ -16,7 +17,6 @@ class UGameplayAbility;
 class UGameplayEffect;
 class USomnusInputConfig;
 class USomnusInventoryComponent;
-enum class ESomnusGait : uint8;
 
 /**
  * Base character class for Project Somnus.
@@ -198,7 +198,7 @@ public:
 	void ServerSwitchWeapon(int32 SlotIndex);
 
 	UFUNCTION()
-	ESomnusGait GetCurrentGait() const { return CurrentGait; }
+	ESomnusGait GetGait() const { return Gait; }
 
 	// Console: dumps this machine's view of every character's containers - each compartment's
 	// grid, its contents, and the ASomnusContainerActor behind any container item, recursing
@@ -207,7 +207,16 @@ public:
 	// component names are not.
 	UFUNCTION(Exec)
 	void SomnusDumpContainers();
-
+	
+	UFUNCTION(BlueprintPure, Category = "Movement")
+	ESomnusMovementMode GetMovementMode() const;
+	
+	UFUNCTION(BlueprintPure, Category = "Movement")
+	bool IsMoving() const;
+	UFUNCTION(BlueprintPure, Category = "Movement")
+	bool JustLanded() const { return bJustLanded; }
+	UFUNCTION(BlueprintPure, Category = "Movement")
+	FVector GetLandVelocity() const { return LandVelocity; }
 protected:
 	// GEs applied to the ASC at possession (e.g., stamina regen, passive buffs)
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
@@ -224,15 +233,38 @@ protected:
 	// Currently equipped weapon (null = unarmed)
 	UPROPERTY(Transient, ReplicatedUsing = OnRep_EquippedWeapon)
 	TObjectPtr<ASomnusWeapon> EquippedWeapon;
+	
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	float RunScale = 1.0;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	float RunScaleThreshold = 0.75;
+	
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	float WalkScale = 0.5; 
+	
+	UFUNCTION(Category = "Input")
+	FVector2D ClampInputScale(FVector2D InputScale) const;
+	
 	UFUNCTION()
 	void OnRep_EquippedWeapon(ASomnusWeapon* OldWeapon);
 
 	// Handles anim layer swap — called on both server and client
 	void UpdateWeaponAnimLayers(ASomnusWeapon* OldWeapon, ASomnusWeapon* NewWeapon);
+	
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "Movement")
+	FVector LastUpdateVelocity;
+	
+	UPROPERTY(BlueprintReadWrite, VisibleAnywhere, Category = "Movement")
+	FVector LandVelocity;
+	
+	UPROPERTY(BlueprintReadWrite, VisibleAnywhere, Category = "Movement")
+	bool bJustLanded;
 
-	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
-	ESomnusGait CurrentGait;
+	UPROPERTY(BlueprintReadWrite, VisibleAnywhere, Category = "Movement")
+	ESomnusGait Gait;
+	
+
 
 	// Guards against double-granting on repossession/respawn
 	bool bDefaultAbilitiesGiven = false;

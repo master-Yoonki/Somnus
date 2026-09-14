@@ -4,16 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
+#include "Character/SomnusMovementTypes.h"
 #include "Equipment/SomnusWeapon.h"
 #include "SomnusAnimInstance.generated.h"
-
-UENUM(BlueprintType)
-enum class ESomnusGait : uint8
-{
-	None        UMETA(DisplayName = "None"),
-	Walking     UMETA(DisplayName = "Walking"),
-	Jogging     UMETA(DisplayName = "Jogging")
-};
 
 UENUM(BlueprintType)
 enum class ELocomotionDirection : uint8

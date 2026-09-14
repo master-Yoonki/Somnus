@@ -26,10 +26,18 @@ public class Somnus : ModuleRules
 			"AIModule",
 			"NavigationSystem",
 			"PhysicsControl",
-			"DeveloperSettings"
+			"DeveloperSettings",
+			// Motion matching modules
+			"PoseSearch",
+			"BlendStack",
+			"Chooser",
+			"CurveExpression",
+			"GameplayStateTreeModule",
+			"IKRig",
+			"ControlRig"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "SlateCore" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "SlateCore", "AnimationWarpingRuntime" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

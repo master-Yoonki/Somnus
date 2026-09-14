@@ -74,7 +74,7 @@ UCharacterMovementComponent* USomnusAnimInstance::GetCharacterMovementComponent(
 void USomnusAnimInstance::UpdateLocomotionData()
 {
 	if (!CachedCharacter) return;
-	Gait = CachedCharacter->GetCurrentGait();
+	Gait = CachedCharacter->GetGait();
 	VelocityLocomotionAngle = UKismetAnimationLibrary::CalculateDirection(Velocity, CachedCharacter->GetActorRotation());
 	CurrentDirection = CalculateDirectionWithHysteresis(VelocityLocomotionAngle, CurrentDirection, 20.0f);
 }
@@ -124,7 +124,7 @@ void USomnusAnimInstance::UpdateAimingData()
 	const FRotator Delta = (AimRotation - ActorRotation).GetNormalized();
 	AimYaw = FMath::Clamp(Delta.Yaw, -180.0f, 180.0f);
 	AimPitch = FMath::Clamp(Delta.Pitch, -90.0f, 90.0f);
-}
+} 
 
 void USomnusAnimInstance::CopyFromMainInstance(const USomnusAnimInstance* MainInstance)
 {

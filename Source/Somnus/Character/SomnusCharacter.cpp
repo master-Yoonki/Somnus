@@ -11,7 +11,6 @@
 #include "Input/SomnusInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "AbilitySystem/Attributes/SomnusAttributeSet.h"
-#include "Animation/SomnusAnimInstance.h"
 #include "Components/CapsuleComponent.h"
 #include "Core/SomnusGameplayTags.h"
 #include "Net/UnrealNetwork.h"
@@ -35,6 +34,7 @@
 #include "Equipment/SomnusMeleeWeapon.h"
 #include "PhysicsControlComponent.h"
 #include "Core/SomnusInteractorComponent.h"
+#include "Kismet/KismetMathLibrary.h"
 
 ASomnusCharacter::ASomnusCharacter()
 {
@@ -74,7 +74,7 @@ ASomnusCharacter::ASomnusCharacter()
 
 	PhysicsControl = CreateDefaultSubobject<UPhysicsControlComponent>(TEXT("PhysicsControl"));
 
-	CurrentGait = ESomnusGait::None;
+	Gait = ESomnusGait::Walk;
 	
 	GetMesh()->PhysicsTransformUpdateMode = EPhysicsTransformUpdateMode::ComponentTransformIsKinematic;
 }
@@ -82,24 +82,26 @@ ASomnusCharacter::ASomnusCharacter()
 void ASomnusCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	
+	LastUpdateVelocity = GetCharacterMovement()->GetLastUpdateVelocity();
 
-	// Toggle rotation mode based on aiming state
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
-	{
-		const bool bAiming = ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
-		UCharacterMovementComponent* CMC = GetCharacterMovement();
-
-		if (bAiming)
-		{
-			CMC->bOrientRotationToMovement = false;
-			CMC->bUseControllerDesiredRotation = true;
-		}
-		else
-		{
-			CMC->bOrientRotationToMovement = true;
-			CMC->bUseControllerDesiredRotation = false;
-		}
-	}
+	// // Toggle rotation mode based on aiming state
+	// if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	// {
+	// 	const bool bAiming = ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
+	// 	UCharacterMovementComponent* CMC = GetCharacterMovement();
+	//
+	// 	if (bAiming)
+	// 	{
+	// 		CMC->bOrientRotationToMovement = false;
+	// 		CMC->bUseControllerDesiredRotation = true;
+	// 	}
+	// 	else
+	// 	{
+	// 		CMC->bOrientRotationToMovement = true;
+	// 		CMC->bUseControllerDesiredRotation = false;
+	// 	}
+	// }
 }
 
 UAbilitySystemComponent* ASomnusCharacter::GetAbilitySystemComponent() const
@@ -257,6 +259,19 @@ void ASomnusCharacter::NotifyCarriedWeaponRetiring(ASomnusWeapon* Weapon)
 	UpdateWeaponAnimLayers(Weapon, nullptr);
 }
 
+FVector2D ASomnusCharacter::ClampInputScale(FVector2D InputScale) const
+{
+	FVector2D NormalizedInput = UKismetMathLibrary::Normal2D(InputScale);
+	if (InputScale.Length() > RunScaleThreshold)
+	{
+		return NormalizedInput * RunScale;
+	}
+	else
+	{
+		return NormalizedInput * WalkScale;
+	}
+}
+
 void ASomnusCharacter::OnRep_EquippedWeapon(ASomnusWeapon* OldWeapon)
 {
 	// Hide old weapon, show new. IsValid rather than a null test: the value that arrived here can
@@ -294,12 +309,50 @@ void ASomnusCharacter::UpdateWeaponAnimLayers(ASomnusWeapon* OldWeapon, ASomnusW
 	}
 }
 
+ESomnusMovementMode ASomnusCharacter::GetMovementMode() const
+{
+	UCharacterMovementComponent* CM = GetCharacterMovement();
+	if (!CM) return ESomnusMovementMode::OnGround;
+	EMovementMode CM_MovementMode = CM->MovementMode;
+	switch (CM_MovementMode)
+	{
+	case MOVE_None:
+	case MOVE_NavWalking:
+	case MOVE_Swimming:
+	case MOVE_Flying:
+	case MOVE_Custom:
+	case MOVE_MAX:
+	case MOVE_Walking:
+		return ESomnusMovementMode::OnGround;
+	case MOVE_Falling:
+		return ESomnusMovementMode::InAir;
+	}
+	return ESomnusMovementMode::OnGround;
+}
+
+bool ASomnusCharacter::IsMoving() const
+{
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		bool bIsVelocityNonZero = 
+			UKismetMathLibrary::NotEqual_VectorVector(Movement->Velocity, FVector::ZeroVector, 0.1);
+		bool bIsAccelerationNonZero = 
+			UKismetMathLibrary::NotEqual_VectorVector(Movement->GetCurrentAcceleration(), FVector::ZeroVector, 0.1);
+		
+		return bIsVelocityNonZero && bIsAccelerationNonZero;
+	}
+	return false;
+}
+
 void ASomnusCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
 	USomnusInputComponent* SomnusIC = Cast<USomnusInputComponent>(PlayerInputComponent);
-	check(SomnusIC && InputConfig);
+	if (!ensureMsgf(SomnusIC && InputConfig, TEXT("%s has no InputConfig set - input is not bound"), *GetClass()->GetName()))
+	{
+		return;
+	}
 
 	// Native actions
 	SomnusIC->BindNativeAction(InputConfig, SomnusTags::Input_Native_Move, ETriggerEvent::Triggered, this, &ASomnusCharacter::Move);
@@ -362,14 +415,14 @@ void ASomnusCharacter::Move(const FInputActionValue& Value)
 	}
 
 	// Input is a Vector2D
-	FVector2D MovementVector = Value.Get<FVector2D>();
-
+	FVector2D MovementVector = ClampInputScale(Value.Get<FVector2D>());
+	
 	if (Controller != nullptr)
 	{
 		// Find out which way is forward
 		const FRotator Rotation = Controller->GetControlRotation();
 		const FRotator YawRotation(0, Rotation.Yaw, 0);
-
+		
 		// Get forward vector
 		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 
