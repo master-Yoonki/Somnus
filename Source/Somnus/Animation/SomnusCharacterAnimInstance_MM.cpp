@@ -26,7 +26,8 @@ bool USomnusCharacterAnimInstance_MM::IsStopping() const
 bool USomnusCharacterAnimInstance_MM::ShouldTurnInPlace() const
 {
 	float DeltaYaw = UKismetMathLibrary::NormalizedDeltaRotator(OrientationIntent, RootTransform.Rotator()).Yaw;
-	return bHasOwningActor && (FMath::Abs(DeltaYaw) > 50.f);
+	float TurnInPlaceThreshold = IsAiming() ? 30.f : 50.f;
+	return bHasOwningActor && (FMath::Abs(DeltaYaw) > TurnInPlaceThreshold);
 }
 
 EPoseSearchInterruptMode USomnusCharacterAnimInstance_MM::GetMMInterruptMode() const

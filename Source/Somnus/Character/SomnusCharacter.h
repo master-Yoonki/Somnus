@@ -17,6 +17,7 @@ class UGameplayAbility;
 class UGameplayEffect;
 class USomnusInputConfig;
 class USomnusInventoryComponent;
+class USomnusItemAnimLayers;
 
 /**
  * Base character class for Project Somnus.
@@ -167,7 +168,6 @@ public:
 	// Getter function for AnimNotify and Abilities to read the weapon data
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
 	ASomnusWeapon* GetEquippedWeapon() const { return EquippedWeapon; }
-
 	/** Called by the equipment component when a carried weapon is about to be destroyed - most
 	 *  often because it was dragged out of its slot while it was in a hand. Does nothing unless
 	 *  that weapon is the one currently drawn.
@@ -226,14 +226,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
 	TArray<TSubclassOf<UGameplayAbility>> DefaultAbilities;
 
-	// Default full body locomotion layer (ABP_UnarmedLocomotion — always re-linked on unequip)
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
-	TSubclassOf<UAnimInstance> DefaultLocomotionLayerClass;
-
 	// Currently equipped weapon (null = unarmed)
 	UPROPERTY(Transient, ReplicatedUsing = OnRep_EquippedWeapon)
 	TObjectPtr<ASomnusWeapon> EquippedWeapon;
-	
+
+	/** The item layer this machine last linked into the mesh. Unlinking goes by this rather than by
+	 *  the previous weapon, which may already be destroyed by the time the swap is seen here. */
+	UPROPERTY(Transient)
+	TSubclassOf<USomnusItemAnimLayers> LinkedItemLayerClass;	
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	float RunScale = 1.0;
 
@@ -250,7 +250,7 @@ protected:
 	void OnRep_EquippedWeapon(ASomnusWeapon* OldWeapon);
 
 	// Handles anim layer swap — called on both server and client
-	void UpdateWeaponAnimLayers(ASomnusWeapon* OldWeapon, ASomnusWeapon* NewWeapon);
+	void UpdateWeaponAnimLayers(const ASomnusWeapon* NewWeapon);
 	
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere, Category = "Movement")
 	FVector LastUpdateVelocity;

@@ -15,6 +15,7 @@
 #include "Core/SomnusGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 #include "Equipment/SomnusWeapon.h"
+#include "Animation/SomnusItemAnimLayers.h"
 #include "GameplayEffect.h"
 #include "Abilities/GameplayAbility.h"
 #include "Core/SomnusGameMode.h"
@@ -242,7 +243,7 @@ void ASomnusCharacter::ServerSwitchWeapon_Implementation(int32 SlotIndex)
 		NewWeapon->Equip(this);
 	}
 
-	UpdateWeaponAnimLayers(OldWeapon, NewWeapon);
+	UpdateWeaponAnimLayers(NewWeapon);
 }
 
 void ASomnusCharacter::NotifyCarriedWeaponRetiring(ASomnusWeapon* Weapon)
@@ -252,11 +253,8 @@ void ASomnusCharacter::NotifyCarriedWeaponRetiring(ASomnusWeapon* Weapon)
 		return;
 	}
 
-	// Null first, then relink. UpdateWeaponAnimLayers never reads the old weapon, so passing one
-	// that is a moment from being destroyed is safe, and naming it keeps the two calls that swap
-	// weapons and the one that loses one reading the same way.
 	EquippedWeapon = nullptr;
-	UpdateWeaponAnimLayers(Weapon, nullptr);
+	UpdateWeaponAnimLayers(nullptr);
 }
 
 FVector2D ASomnusCharacter::ClampInputScale(FVector2D InputScale) const
@@ -285,28 +283,34 @@ void ASomnusCharacter::OnRep_EquippedWeapon(ASomnusWeapon* OldWeapon)
 		EquippedWeapon->SetActorHiddenInGame(false);
 	}
 
-	UpdateWeaponAnimLayers(OldWeapon, EquippedWeapon);
+	UpdateWeaponAnimLayers(EquippedWeapon);
 }
 
-void ASomnusCharacter::UpdateWeaponAnimLayers(ASomnusWeapon* OldWeapon, ASomnusWeapon* NewWeapon)
+void ASomnusCharacter::UpdateWeaponAnimLayers(const ASomnusWeapon* NewWeapon)
 {
 	USkeletalMeshComponent* SkelMesh = GetMesh();
 	if (!SkelMesh) return;
 
-	// 1. Always re-link default locomotion (restores unarmed baseline)
-	if (DefaultLocomotionLayerClass)
+	const TSubclassOf<USomnusItemAnimLayers> NewLayerClass = NewWeapon ? NewWeapon->GetAnimLayerClass() : nullptr;
+
+	// Weapons sharing a layer (a bat and a pipe) keep the running instance. Relinking the same
+	// class would spawn a new one, snapping the pose and resetting whatever the layer carries.
+	if (NewLayerClass == LinkedItemLayerClass)
 	{
-		SkelMesh->LinkAnimClassLayers(DefaultLocomotionLayerClass);
+		return;
 	}
 
-	// 2. Link new weapon's layers (overrides defaults for matching interfaces)
-	//    Old weapon's layers are NOT unlinked — AnimGraph uses bHasUpperBodyLayer
-	//    to skip evaluation when no weapon is equipped.
-	//    When a new weapon equips, LinkAnimClassLayers replaces the old implementation.
-	if (NewWeapon)
+	// With nothing linked, the main blueprint's own implementation of the layer takes over, which
+	// is what unarmed looks like.
+	if (LinkedItemLayerClass)
 	{
-		NewWeapon->LinkAnimLayers(SkelMesh);
+		SkelMesh->UnlinkAnimClassLayers(LinkedItemLayerClass);
 	}
+	if (NewLayerClass)
+	{
+		SkelMesh->LinkAnimClassLayers(NewLayerClass);
+	}
+	LinkedItemLayerClass = NewLayerClass;
 }
 
 ESomnusMovementMode ASomnusCharacter::GetMovementMode() const
@@ -545,6 +549,7 @@ void ASomnusCharacter::Die(const FVector& HitDirection)
 	{
 		EquippedWeapon->Unequip();
 		EquippedWeapon = nullptr;
+		UpdateWeaponAnimLayers(nullptr);
 	}
 
 	// Only clean up an ability system that exists. It lives on the PlayerState, which a character

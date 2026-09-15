@@ -7,8 +7,9 @@
 #include "BoneControllers/AnimNode_OffsetRootBone.h"
 #include "Kismet/KismetMathLibrary.h"
 
+#include "AbilitySystemComponent.h"
 #include "Character/SomnusCharacter.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "Core/SomnusGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 
@@ -25,7 +26,10 @@ void USomnusCharacterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
 
-}
+	// The ability system lives on the player state, so it is missing until one is assigned.
+	const ASomnusCharacter* SomnusCharacter = GetSomnusCharacter();
+	const UAbilitySystemComponent* ASC = SomnusCharacter ? SomnusCharacter->GetAbilitySystemComponent() : nullptr;
+	bIsAiming = ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);}
 
 void USomnusCharacterAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 {
@@ -105,7 +109,7 @@ void USomnusCharacterAnimInstance::UpdateEssentialValues(float DeltaSeconds)
 	
 	Velocity_LastFrame = Velocity;
 	Velocity = CharacterMovement->Velocity;
-	Speed2D = Velocity.Length();
+	Speed2D = Velocity.Size2D();
 	bHasVelocity = Speed2D > 5.0;
 	VelocityAcceleration = (Velocity - Velocity_LastFrame) / FMath::Max(DeltaSeconds, 0.001);
 	if (bHasVelocity)

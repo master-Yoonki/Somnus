@@ -40,7 +40,11 @@ public:
 	virtual bool JustLanded_Light() const;
 	UFUNCTION(BlueprintPure, Category = "MovementAnalysis", meta = (BlueprintThreadSafe, HideSelfPin))
 	virtual bool JustLanded_Heavy() const;
-	
+
+	ESomnusGait GetGait() const { return Gait; }
+	ESomnusMovementState GetMovementState() const { return MovementState; }
+	float GetSpeed2D() const { return Speed2D; }
+	bool IsAiming() const { return bIsAiming; }
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "EssentialValues", meta = (BlueprintThreadSafe))
 	FAnimNodeReference GetOffsetRootNode();
@@ -101,7 +105,10 @@ protected:
 	ESomnusMovementMode MovementMode;
 	UPROPERTY(BlueprintReadOnly, Category = "States")
 	ESomnusMovementMode MovementMode_LastFrame;
-	
+
+	/** Read on the game thread - the ability system is not safe to query from the worker update. */
+	UPROPERTY(BlueprintReadOnly, Category = "States")
+	bool bIsAiming = false;	
 	UPROPERTY(BlueprintReadOnly, Category = "OffsetRoot")
 	FRotator OrientationIntent;
 	

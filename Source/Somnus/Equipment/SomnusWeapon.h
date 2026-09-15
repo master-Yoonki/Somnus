@@ -6,17 +6,10 @@
 #include "GameplayTagContainer.h"
 #include "GameplayAbilitySpecHandle.h"
 #include "Abilities/GameplayAbility.h"
-#include "Animation/AnimSequence.h"
 #include "GameFramework/Actor.h"
 #include "SomnusWeapon.generated.h"
 
-UENUM(BlueprintType)
-enum class ESomnusWeaponType : uint8
-{
-	None    UMETA(DisplayName = "None"),
-	Bat     UMETA(DisplayName = "Bat"),
-	Sword   UMETA(DisplayName = "Sword")
-};
+class USomnusItemAnimLayers;
 
 UCLASS()
 class SOMNUS_API ASomnusWeapon : public AActor
@@ -36,29 +29,13 @@ public:
 	// Called by the server to unequip
 	virtual void Unequip();
 
-	ESomnusWeaponType GetWeaponType() const { return WeaponType; }
-	bool HasUpperBodyLayer() const { return UpperBodyAnimLayerClass != nullptr; }
-	UAnimSequence* GetStanceCorrectionPose() const { return StanceCorrectionPose; }
-
-	void LinkAnimLayers(USkeletalMeshComponent* Mesh);
-	void UnlinkAnimLayers(USkeletalMeshComponent* Mesh);
+	TSubclassOf<USomnusItemAnimLayers> GetAnimLayerClass() const { return AnimLayerClass; }
 
 protected:
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Setup")
-	ESomnusWeaponType WeaponType = ESomnusWeaponType::None;
-
-	// Replaces full body locomotion (e.g., rifle has its own walk/run/idle set)
+	/** Linked into the holder's animation while this weapon is drawn. The weapon only names it -
+	 *  the character owns the mesh, so linking and unlinking are the character's to do. */
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
-	TSubclassOf<UAnimInstance> FullBodyLocomotionLayerClass;
-
-	// Upper body overlay (e.g., bat/sword idle pose over unarmed locomotion)
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
-	TSubclassOf<UAnimInstance> UpperBodyAnimLayerClass;
-
-	// Additive pose for correcting foot stance in idle (e.g., bat idle - unarmed idle delta)
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
-	TObjectPtr<UAnimSequence> StanceCorrectionPose;
-
+	TSubclassOf<USomnusItemAnimLayers> AnimLayerClass;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon|Components")
 	class UStaticMeshComponent* WeaponMesh;
 

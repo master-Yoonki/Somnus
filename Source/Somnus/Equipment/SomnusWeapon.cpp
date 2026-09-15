@@ -107,31 +107,3 @@ void ASomnusWeapon::OnRep_OwningCharacter()
 		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	}
 }
-
-void ASomnusWeapon::LinkAnimLayers(USkeletalMeshComponent* Mesh)
-{
-	if (!Mesh) return;
-
-	if (FullBodyLocomotionLayerClass)
-	{
-		Mesh->LinkAnimClassLayers(FullBodyLocomotionLayerClass);
-	}
-	if (UpperBodyAnimLayerClass)
-	{
-		Mesh->LinkAnimClassLayers(UpperBodyAnimLayerClass);
-	}
-}
-
-void ASomnusWeapon::UnlinkAnimLayers(USkeletalMeshComponent* Mesh)
-{
-	if (!Mesh) return;
-
-	if (FullBodyLocomotionLayerClass)
-	{
-		Mesh->UnlinkAnimClassLayers(FullBodyLocomotionLayerClass);
-	}
-	if (UpperBodyAnimLayerClass)
-	{
-		Mesh->UnlinkAnimClassLayers(UpperBodyAnimLayerClass);
-	}
-}
