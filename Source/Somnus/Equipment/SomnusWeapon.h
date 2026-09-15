@@ -30,12 +30,20 @@ public:
 	virtual void Unequip();
 
 	TSubclassOf<USomnusItemAnimLayers> GetAnimLayerClass() const { return AnimLayerClass; }
+	float GetAimStanceYaw() const { return AimStanceYaw; }
 
 protected:
 	/** Linked into the holder's animation while this weapon is drawn. The weapon only names it -
 	 *  the character owns the mesh, so linking and unlinking are the character's to do. */
 	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation")
 	TSubclassOf<USomnusItemAnimLayers> AnimLayerClass;
+
+	/** Degrees the stance clips turn the pelvis away from where the weapon points. The body is
+	 *  turned this far while aiming, so the stance's upper body lands on hips that already face
+	 *  its way instead of twisting at the waist over hips that face forward. */
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation", meta = (Units = "Degrees"))
+	float AimStanceYaw = 0.f;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon|Components")
 	class UStaticMeshComponent* WeaponMesh;
 

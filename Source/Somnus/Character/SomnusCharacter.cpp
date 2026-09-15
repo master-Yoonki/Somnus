@@ -85,6 +85,7 @@ void ASomnusCharacter::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 	
 	LastUpdateVelocity = GetCharacterMovement()->GetLastUpdateVelocity();
+	UpdateAimStanceTurn(DeltaTime);
 
 	// // Toggle rotation mode based on aiming state
 	// if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
@@ -182,6 +183,35 @@ TArray<FSomnusStrikeSourceInfo> ASomnusCharacter::GetStrikeSources() const
 void ASomnusCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	BaseMeshRelativeRotation = GetMesh()->GetRelativeRotation().Quaternion();
+}
+
+void ASomnusCharacter::UpdateAimStanceTurn(float DeltaTime)
+{
+	// A corpse's mesh is simulating; turning it would teleport the ragdoll.
+	if (IsDead())
+	{
+		return;
+	}
+
+	// Runs on every machine, the server included - melee traces sweep the weapon on this mesh, so
+	// the server has to turn it the same way the players see it turned.
+	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	const bool bAiming = ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
+	const float TargetYaw = bAiming && EquippedWeapon ? EquippedWeapon->GetAimStanceYaw() : 0.f;
+
+	const float PreviousYaw = AimStanceYaw;
+	FMath::ExponentialSmoothingApprox(AimStanceYaw, TargetYaw, DeltaTime, AimStanceTurnSmoothingTime);
+	if (FMath::IsNearlyEqual(AimStanceYaw, TargetYaw, 0.05f))
+	{
+		AimStanceYaw = TargetYaw;
+	}
+
+	if (AimStanceYaw != PreviousYaw)
+	{
+		GetMesh()->SetRelativeRotation(FQuat(FVector::UpVector, FMath::DegreesToRadians(AimStanceYaw)) * BaseMeshRelativeRotation);
+	}
 }
 
 TArray<FSomnusActiveContainerInfo> ASomnusCharacter::GetActiveContainers() const

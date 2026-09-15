@@ -29,7 +29,9 @@ void USomnusCharacterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	// The ability system lives on the player state, so it is missing until one is assigned.
 	const ASomnusCharacter* SomnusCharacter = GetSomnusCharacter();
 	const UAbilitySystemComponent* ASC = SomnusCharacter ? SomnusCharacter->GetAbilitySystemComponent() : nullptr;
-	bIsAiming = ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);}
+	bIsAiming = ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
+	AimStanceYaw = SomnusCharacter ? SomnusCharacter->GetAimStanceYaw() : 0.f;
+}
 
 void USomnusCharacterAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 {
@@ -117,7 +119,9 @@ void USomnusCharacterAnimInstance::UpdateEssentialValues(float DeltaSeconds)
 		LastNonZeroVelocity = Velocity;
 	}
 	
-	OrientationIntent = GetOwningActor()->GetActorRotation();
+	// The root follows the mesh, and the mesh is turned by the aim stance on top of the actor.
+	// Leaving the turn out would read as a standing yaw error and keep turn-in-place firing.
+	OrientationIntent = GetOwningActor()->GetActorRotation() + FRotator(0.f, AimStanceYaw, 0.f);
 }
 
 void USomnusCharacterAnimInstance::UpdateStates()
@@ -126,7 +130,10 @@ void USomnusCharacterAnimInstance::UpdateStates()
 	MovementMode_LastFrame = MovementMode;
 	MovementState_LastFrame = MovementState;
 	Gait_LastFrame = Gait;
-	
+
+	bFullBodyMontageActive_LastFrame = bFullBodyMontageActive;
+	bFullBodyMontageActive = IsSlotActive(FullBodySlotName);
+
 	if (!SomnusCharacter) return;
 	MovementMode = SomnusCharacter->GetMovementMode(); 
 	MovementState = SomnusCharacter->IsMoving() ? ESomnusMovementState::Moving : ESomnusMovementState::Idle;

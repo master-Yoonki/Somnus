@@ -32,6 +32,14 @@ bool USomnusCharacterAnimInstance_MM::ShouldTurnInPlace() const
 
 EPoseSearchInterruptMode USomnusCharacterAnimInstance_MM::GetMMInterruptMode() const
 {
+	// The clip motion matching was playing before the montage has kept running underneath it and
+	// no longer matches anything on screen. Continuing it would pop the moment the montage lets go,
+	// so search again from the pose the montage left behind.
+	if (bFullBodyMontageActive_LastFrame && !bFullBodyMontageActive)
+	{
+		return EPoseSearchInterruptMode::ForceInterruptAndInvalidateContinuingPose;
+	}
+
 	bool bIsMovementStateChanged = MovementState != MovementState_LastFrame;
 	bool bIsMovementModeChanged = MovementMode != MovementMode_LastFrame;
 	bool bIsGaitChanged = Gait != Gait_LastFrame;
@@ -39,7 +47,7 @@ EPoseSearchInterruptMode USomnusCharacterAnimInstance_MM::GetMMInterruptMode() c
 	bool bIsMovementStateMoving = MovementState == ESomnusMovementState::Moving;
 	
 	bool bRes1 = (bIsMovementStateMoving && bIsGaitChanged) || bIsMovementStateChanged;
-	bool bRes2 = bRes1 && (MovementMode == ESomnusMovementMode::OnGround) || bIsMovementModeChanged;
+	bool bRes2 = (bRes1 && MovementMode == ESomnusMovementMode::OnGround) || bIsMovementModeChanged;
 	
 	return bRes2 ? EPoseSearchInterruptMode::InterruptOnDatabaseChange : EPoseSearchInterruptMode::DoNotInterrupt;
 }

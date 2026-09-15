@@ -168,6 +168,11 @@ public:
 	// Getter function for AnimNotify and Abilities to read the weapon data
 	UFUNCTION(BlueprintCallable, Category = "Weapon")
 	ASomnusWeapon* GetEquippedWeapon() const { return EquippedWeapon; }
+
+	/** How far the mesh is turned for the aim stance right now, mid-blend included. Animation
+	 *  counter-rotates the stance clips by exactly this so the weapon keeps pointing at the aim. */
+	float GetAimStanceYaw() const { return AimStanceYaw; }
+
 	/** Called by the equipment component when a carried weapon is about to be destroyed - most
 	 *  often because it was dragged out of its slot while it was in a hand. Does nothing unless
 	 *  that weapon is the one currently drawn.
@@ -233,7 +238,21 @@ protected:
 	/** The item layer this machine last linked into the mesh. Unlinking goes by this rather than by
 	 *  the previous weapon, which may already be destroyed by the time the swap is seen here. */
 	UPROPERTY(Transient)
-	TSubclassOf<USomnusItemAnimLayers> LinkedItemLayerClass;	
+	TSubclassOf<USomnusItemAnimLayers> LinkedItemLayerClass;
+
+	/** Time the body takes to settle into, or back out of, the aim stance turn. */
+	UPROPERTY(EditDefaultsOnly, Category = "Weapon|Animation", meta = (ClampMin = "0", Units = "Seconds"))
+	float AimStanceTurnSmoothingTime = 0.1f;
+
+	/** The mesh's authored relative rotation, which the aim stance turn is added on top of. */
+	FQuat BaseMeshRelativeRotation = FQuat::Identity;
+
+	float AimStanceYaw = 0.f;
+
+	/** Turns the mesh rather than the capsule: movement, aim and camera stay on the capsule, while
+	 *  motion matching reads the mesh's rotation as the body's facing and picks steps to suit. */
+	void UpdateAimStanceTurn(float DeltaTime);
+	
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	float RunScale = 1.0;
 

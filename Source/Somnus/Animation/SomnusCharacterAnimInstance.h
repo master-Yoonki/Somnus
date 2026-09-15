@@ -45,6 +45,8 @@ public:
 	ESomnusMovementState GetMovementState() const { return MovementState; }
 	float GetSpeed2D() const { return Speed2D; }
 	bool IsAiming() const { return bIsAiming; }
+	float GetAimStanceYaw() const { return AimStanceYaw; }
+
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "EssentialValues", meta = (BlueprintThreadSafe))
 	FAnimNodeReference GetOffsetRootNode();
@@ -108,7 +110,25 @@ protected:
 
 	/** Read on the game thread - the ability system is not safe to query from the worker update. */
 	UPROPERTY(BlueprintReadOnly, Category = "States")
-	bool bIsAiming = false;	
+	bool bIsAiming = false;
+
+	/** How far the character has turned the mesh for the aim stance, copied on the game thread. */
+	UPROPERTY(BlueprintReadOnly, Category = "States")
+	float AimStanceYaw = 0.f;
+
+	/** The slot full-body montages play in. The slot is watched rather than any one montage, so
+	 *  every clip put in it hands back to locomotion the same way. */
+	UPROPERTY(EditDefaultsOnly, Category = "Montage")
+	FName FullBodySlotName = TEXT("MeleeHeavyAttack");
+
+	/** True while a full-body montage owns the pose, and false from the frame it starts blending
+	 *  out - the moment locomotion has to take over again. */
+	UPROPERTY(BlueprintReadOnly, Category = "Montage")
+	bool bFullBodyMontageActive = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Montage")
+	bool bFullBodyMontageActive_LastFrame = false;
+	
 	UPROPERTY(BlueprintReadOnly, Category = "OffsetRoot")
 	FRotator OrientationIntent;
 	

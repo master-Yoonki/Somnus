@@ -28,4 +28,6 @@ void USomnusItemAnimLayers::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	Gait = MainAnimInstance->GetGait();
 	MovementState = MainAnimInstance->GetMovementState();
 	Speed2D = MainAnimInstance->GetSpeed2D();
-	bIsAiming = MainAnimInstance->IsAiming();}
+	bIsAiming = MainAnimInstance->IsAiming();
+	AimStanceYaw = MainAnimInstance->GetAimStanceYaw();
+}

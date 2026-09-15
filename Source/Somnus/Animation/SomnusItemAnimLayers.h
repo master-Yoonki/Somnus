@@ -40,4 +40,9 @@ protected:
 	float Speed2D = 0.f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "ItemLayers")
-	bool bIsAiming = false;};
+	bool bIsAiming = false;
+
+	/** Counter-rotate stance clips by the negative of this so the weapon keeps pointing at the aim. */
+	UPROPERTY(BlueprintReadOnly, Category = "ItemLayers")
+	float AimStanceYaw = 0.f;
+};
