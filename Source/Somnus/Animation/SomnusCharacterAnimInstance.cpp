@@ -31,6 +31,8 @@ void USomnusCharacterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	const UAbilitySystemComponent* ASC = SomnusCharacter ? SomnusCharacter->GetAbilitySystemComponent() : nullptr;
 	bIsAiming = ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
 	AimStanceYaw = SomnusCharacter ? SomnusCharacter->GetAimStanceYaw() : 0.f;
+
+	UpdateStates();
 }
 
 void USomnusCharacterAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
@@ -40,7 +42,6 @@ void USomnusCharacterAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSe
 	if (bHasOwningActor)
 	{
 		UpdateEssentialValues(DeltaSeconds);
-		UpdateStates();
 	}
 }
 
@@ -53,8 +54,7 @@ ASomnusCharacter* USomnusCharacterAnimInstance::GetSomnusCharacter() const
 
 bool USomnusCharacterAnimInstance::IsMoving() const
 {
-	if (!GetSomnusCharacter()) return false;
-	return GetSomnusCharacter()->IsMoving();
+	return bIsMoving;
 }
 
 bool USomnusCharacterAnimInstance::IsStarting() const
@@ -79,16 +79,12 @@ bool USomnusCharacterAnimInstance::ShouldTurnInPlace() const
 
 bool USomnusCharacterAnimInstance::JustLanded_Light() const
 {
-	if (!GetSomnusCharacter()) return false;
-	return GetSomnusCharacter()->JustLanded() && 
-		(FMath::Abs(GetSomnusCharacter()->GetLandVelocity().Z) < HeavyLandSpeedThreshold);
+	return bJustLanded && FMath::Abs(LandVelocity.Z) < HeavyLandSpeedThreshold;
 }
 
 bool USomnusCharacterAnimInstance::JustLanded_Heavy() const
-{	
-	if (!GetSomnusCharacter()) return false;
-	return GetSomnusCharacter()->JustLanded() && 
-		(FMath::Abs(GetSomnusCharacter()->GetLandVelocity().Z) >= HeavyLandSpeedThreshold);
+{
+	return bJustLanded && FMath::Abs(LandVelocity.Z) >= HeavyLandSpeedThreshold;
 }
 
 void USomnusCharacterAnimInstance::UpdateEssentialValues(float DeltaSeconds)
@@ -135,7 +131,11 @@ void USomnusCharacterAnimInstance::UpdateStates()
 	bFullBodyMontageActive = IsSlotActive(FullBodySlotName);
 
 	if (!SomnusCharacter) return;
-	MovementMode = SomnusCharacter->GetMovementMode(); 
-	MovementState = SomnusCharacter->IsMoving() ? ESomnusMovementState::Moving : ESomnusMovementState::Idle;
+	MovementMode = SomnusCharacter->GetMovementMode();
+	bIsMoving = SomnusCharacter->IsMoving();
+	MovementState = bIsMoving ? ESomnusMovementState::Moving : ESomnusMovementState::Idle;
 	Gait = SomnusCharacter->GetGait();
+
+	bJustLanded = SomnusCharacter->JustLanded();
+	LandVelocity = SomnusCharacter->GetLandVelocity();
 }

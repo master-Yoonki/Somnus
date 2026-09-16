@@ -52,6 +52,8 @@ protected:
 	FAnimNodeReference GetOffsetRootNode();
 	
 	virtual void UpdateEssentialValues(float DeltaSeconds);
+
+	/** Game thread only - this is where the character is asked anything. */
 	virtual void UpdateStates();
 	
 	UPROPERTY(BlueprintReadOnly, Category = "Components")
@@ -108,6 +110,19 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "States")
 	ESomnusMovementMode MovementMode_LastFrame;
 
+	/** Everything below is the character's answer to a question, taken once on the game thread.
+	 *  The queries the graph and the choosers call run on a worker thread, where reaching back
+	 *  into the actor is neither safe nor possible - in the asset preview there is no actor at
+	 *  all, which is what used to take the editor down. */
+	UPROPERTY(BlueprintReadOnly, Category = "States")
+	bool bIsMoving = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "InAir")
+	bool bJustLanded = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "InAir")
+	FVector LandVelocity = FVector::ZeroVector;
+
 	/** Read on the game thread - the ability system is not safe to query from the worker update. */
 	UPROPERTY(BlueprintReadOnly, Category = "States")
 	bool bIsAiming = false;
@@ -132,6 +147,7 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "OffsetRoot")
 	FRotator OrientationIntent;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "InAir")
-	float HeavyLandSpeedThreshold;
+	/** Downward speed that makes a landing a heavy one, in cm/s. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "InAir")
+	float HeavyLandSpeedThreshold = 700.f;
 };
