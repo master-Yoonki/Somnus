@@ -59,40 +59,40 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Components")
 	class UCharacterMovementComponent* CharacterMovement;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	bool bHasOwningActor;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	FTransform CharacterTransform;
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	FTransform CharacterTransform_LastFrame;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	FTransform RootTransform;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	float AccelerationAmount;
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	float Speed2D;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	bool bHasAcceleration;
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	bool bHasVelocity;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	FVector Acceleration;
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	FVector Acceleration_LastFrame;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	FVector Velocity;
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	FVector Velocity_LastFrame;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	FVector VelocityAcceleration;
-	UPROPERTY(BlueprintReadOnly, Category = "EsseitnalValues")
+	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	FVector LastNonZeroVelocity;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "States")

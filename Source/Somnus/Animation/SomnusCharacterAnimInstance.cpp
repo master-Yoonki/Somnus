@@ -57,9 +57,11 @@ bool USomnusCharacterAnimInstance::IsMoving() const
 	return bIsMoving;
 }
 
+// Starting, pivoting, stopping and turning in place are all read from the trajectory, which this
+// class does not build. A graph driven some other way answers no rather than inventing one.
 bool USomnusCharacterAnimInstance::IsStarting() const
 {
-	return Speed2D >= 0.f && AccelerationAmount >= 0.f;
+	return false;
 }
 
 bool USomnusCharacterAnimInstance::IsPivoting() const
@@ -89,8 +91,6 @@ bool USomnusCharacterAnimInstance::JustLanded_Heavy() const
 
 void USomnusCharacterAnimInstance::UpdateEssentialValues(float DeltaSeconds)
 {
-	CharacterTransform_LastFrame = CharacterTransform;
-	CharacterTransform = TryGetPawnOwner()->GetTransform();
 	if (FAnimNode_OffsetRootBone* OffsetRootNode = GetOffsetRootNode().GetAnimNodePtr<FAnimNode_OffsetRootBone>())
 	{
 		FTransform OffsetRootTransform;
@@ -104,6 +104,7 @@ void USomnusCharacterAnimInstance::UpdateEssentialValues(float DeltaSeconds)
 	Acceleration_LastFrame = Acceleration;
 	Acceleration = CharacterMovement->GetCurrentAcceleration();
 	AccelerationAmount = UKismetMathLibrary::SafeDivide(Acceleration.Length(), CharacterMovement->GetMaxAcceleration());
+	bHasAcceleration = AccelerationAmount > 0.f;
 	
 	Velocity_LastFrame = Velocity;
 	Velocity = CharacterMovement->Velocity;
@@ -117,7 +118,7 @@ void USomnusCharacterAnimInstance::UpdateEssentialValues(float DeltaSeconds)
 	
 	// The root follows the mesh, and the mesh is turned by the aim stance on top of the actor.
 	// Leaving the turn out would read as a standing yaw error and keep turn-in-place firing.
-	OrientationIntent = GetOwningActor()->GetActorRotation() + FRotator(0.f, AimStanceYaw, 0.f);
+	OrientationIntent = CharacterTransform.Rotator() + FRotator(0.f, AimStanceYaw, 0.f);
 }
 
 void USomnusCharacterAnimInstance::UpdateStates()
@@ -130,7 +131,10 @@ void USomnusCharacterAnimInstance::UpdateStates()
 	bFullBodyMontageActive_LastFrame = bFullBodyMontageActive;
 	bFullBodyMontageActive = IsSlotActive(FullBodySlotName);
 
+	CharacterTransform_LastFrame = CharacterTransform;
+
 	if (!SomnusCharacter) return;
+	CharacterTransform = SomnusCharacter->GetTransform();
 	MovementMode = SomnusCharacter->GetMovementMode();
 	bIsMoving = SomnusCharacter->IsMoving();
 	MovementState = bIsMoving ? ESomnusMovementState::Moving : ESomnusMovementState::Idle;
