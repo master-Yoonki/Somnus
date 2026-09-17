@@ -99,6 +99,16 @@ void USomnusCharacterAnimInstance::UpdateEssentialValues(float DeltaSeconds)
 		FRotator OffsetRootRotator = OffsetRootTransform.Rotator();
 		OffsetRootRotator.Add(0.f, 90.f, 0.f);
 		RootTransform.SetRotation(OffsetRootRotator.Quaternion());
+
+		// The 90 degrees above put the root back into the actor's frame, and the mesh is the actor
+		// turned by the aim stance, so the two yaws are comparable. The root is read from the last
+		// evaluation, which leaves the offset one frame behind the capsule.
+		UpperBodyYawOffset = FRotator::NormalizeAxis(
+			RootTransform.Rotator().Yaw - (CharacterTransform.Rotator().Yaw + AimStanceYaw));
+	}
+	else
+	{
+		UpperBodyYawOffset = 0.f;
 	}
 	
 	Acceleration_LastFrame = Acceleration;

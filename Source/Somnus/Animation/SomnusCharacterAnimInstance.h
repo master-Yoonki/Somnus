@@ -46,6 +46,7 @@ public:
 	float GetSpeed2D() const { return Speed2D; }
 	bool IsAiming() const { return bIsAiming; }
 	float GetAimStanceYaw() const { return AimStanceYaw; }
+	float GetUpperBodyYawOffset() const { return UpperBodyYawOffset; }
 
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "EssentialValues", meta = (BlueprintThreadSafe))
@@ -146,6 +147,12 @@ protected:
 	
 	UPROPERTY(BlueprintReadOnly, Category = "OffsetRoot")
 	FRotator OrientationIntent;
+
+	/** How far the offset root trails the mesh, in degrees. The lower body already rides the offset
+	 *  root, so a clip posed against the mesh instead - anything blended in mesh space - turns with
+	 *  the capsule while the legs do not. Rotating it by this puts both halves back in one frame. */
+	UPROPERTY(BlueprintReadOnly, Category = "OffsetRoot")
+	float UpperBodyYawOffset = 0.f;
 	
 	/** Downward speed that makes a landing a heavy one, in cm/s. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "InAir")

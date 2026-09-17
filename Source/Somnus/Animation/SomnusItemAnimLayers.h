@@ -45,4 +45,8 @@ protected:
 	/** Counter-rotate stance clips by the negative of this so the weapon keeps pointing at the aim. */
 	UPROPERTY(BlueprintReadOnly, Category = "ItemLayers")
 	float AimStanceYaw = 0.f;
+
+	/** Add this to the stance's root rotation to follow the offset root the legs already follow. */
+	UPROPERTY(BlueprintReadOnly, Category = "ItemLayers")
+	float UpperBodyYawOffset = 0.f;
 };
