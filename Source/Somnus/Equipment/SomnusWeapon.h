@@ -56,7 +56,7 @@ protected:
 	TArray<TSubclassOf<UGameplayAbility>> AbilitiesToGrant;
 
 	// Tags to apply to the owner when equipped (e.g., Weapon.Equipped.Bat)
-	UPROPERTY(EditDefaultsOnly, Category = "Weapon|GAS")
+	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category = "Weapon|GAS")
 	FGameplayTagContainer WeaponTags;
 
 	// Internal state tracking

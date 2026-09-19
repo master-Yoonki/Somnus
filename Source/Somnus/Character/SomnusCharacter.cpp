@@ -55,8 +55,14 @@ ASomnusCharacter::ASomnusCharacter()
 	// Create a camera boom (pulls in towards the player if there is a collision)
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 400.0f; // The camera follows at this distance behind the character
 	CameraBoom->bUsePawnControlRotation = true; // Rotate the arm based on the controller
+	// Arm length, offset and field of view are not set here: they belong to the framing table, and
+	// a constructor value would only be the one the camera blends away from on the first frame.
+
+	ExploreCamera   = { 320.f, FVector(0.f,  0.f,  0.f), 88.f, 0.35f };
+	StrafeCamera    = { 200.f, FVector(0.f, 25.f, 45.f), 80.f, 0.25f };
+	MeleeAimCamera  = { 180.f, FVector(0.f, 40.f, 50.f), 75.f, 0.15f };
+	GunAimCamera    = { 160.f, FVector(0.f, 55.f, 55.f), 72.f, 0.20f };
 
 	// Create a follow camera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
@@ -85,7 +91,13 @@ void ASomnusCharacter::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 	
 	LastUpdateVelocity = GetCharacterMovement()->GetLastUpdateVelocity();
+
+	// The ability system lives on the player state, so it is missing until one is assigned.
+	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	bIsAiming = ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
+
 	UpdateAimStanceTurn(DeltaTime);
+	UpdateCamera(DeltaTime);
 
 	// // Toggle rotation mode based on aiming state
 	// if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
@@ -185,6 +197,58 @@ void ASomnusCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	BaseMeshRelativeRotation = GetMesh()->GetRelativeRotation().Quaternion();
+
+	// Start in the framing rather than blending into it from whatever the components were built with.
+	const FSomnusCameraMode& StartingFraming = GetCameraMode(CameraFraming);
+	ApplyCameraMode(StartingFraming, StartingFraming, 1.f);
+	CameraBlendStart = StartingFraming;
+}
+
+const FSomnusCameraMode& ASomnusCharacter::GetCameraMode(ESomnusCameraFraming Framing) const
+{
+	switch (Framing)
+	{
+	case ESomnusCameraFraming::Strafe:	 return StrafeCamera;
+	case ESomnusCameraFraming::MeleeAim: return MeleeAimCamera;
+	case ESomnusCameraFraming::GunAim:	 return GunAimCamera;
+	default:							 return ExploreCamera;
+	}
+}
+
+void ASomnusCharacter::UpdateCamera(float DeltaTime)
+{
+	// Nobody looks through a proxy's camera, and moving one would only cost the frame time.
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	const FSomnusCameraMode& Target = GetCameraMode(CameraFraming);
+
+	if (CameraFraming != CameraFraming_LastFrame)
+	{
+		CameraBlendStart.TargetArmLength = CameraBoom->TargetArmLength;
+		CameraBlendStart.SocketOffset = CameraBoom->SocketOffset;
+		CameraBlendStart.FieldOfView = FollowCamera->FieldOfView;
+		CameraBlendElapsed = 0.f;
+		CameraFraming_LastFrame = CameraFraming;
+	}
+
+	CameraBlendElapsed += DeltaTime;
+	const float Alpha = Target.BlendTime > 0.f
+		? FMath::Clamp(CameraBlendElapsed / Target.BlendTime, 0.f, 1.f)
+		: 1.f;
+
+	// Eased rather than linear: a camera that starts and stops moving at full speed reads as a cut
+	// with extra steps, however long the blend is given.
+	ApplyCameraMode(CameraBlendStart, Target, FMath::SmoothStep(0.f, 1.f, Alpha));
+}
+
+void ASomnusCharacter::ApplyCameraMode(const FSomnusCameraMode& From, const FSomnusCameraMode& To, float Alpha)
+{
+	CameraBoom->TargetArmLength = FMath::Lerp(From.TargetArmLength, To.TargetArmLength, Alpha);
+	CameraBoom->SocketOffset = FMath::Lerp(From.SocketOffset, To.SocketOffset, Alpha);
+	FollowCamera->SetFieldOfView(FMath::Lerp(From.FieldOfView, To.FieldOfView, Alpha));
 }
 
 void ASomnusCharacter::UpdateAimStanceTurn(float DeltaTime)
@@ -197,9 +261,7 @@ void ASomnusCharacter::UpdateAimStanceTurn(float DeltaTime)
 
 	// Runs on every machine, the server included - melee traces sweep the weapon on this mesh, so
 	// the server has to turn it the same way the players see it turned.
-	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
-	const bool bAiming = ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
-	const float TargetYaw = bAiming && EquippedWeapon ? EquippedWeapon->GetAimStanceYaw() : 0.f;
+	const float TargetYaw = bIsAiming && EquippedWeapon ? EquippedWeapon->GetAimStanceYaw() : 0.f;
 
 	const float PreviousYaw = AimStanceYaw;
 	FMath::ExponentialSmoothingApprox(AimStanceYaw, TargetYaw, DeltaTime, AimStanceTurnSmoothingTime);

@@ -33,7 +33,7 @@ namespace SomnusTags
 	UE_DEFINE_GAMEPLAY_TAG(Equipment_Slot_Weapon_Secondary, "Equipment.Slot.Weapon.Secondary");
 
 	// Equipment identity
-	UE_DEFINE_GAMEPLAY_TAG(Equipped_Weapon_Bat, "Equipped.Weapon.Bat");
+	UE_DEFINE_GAMEPLAY_TAG(Equipped_Weapon_Melee_Bat, "Equipped.Weapon.Melee.Bat");
 
 	// Data — SetByCaller keys
 	UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");

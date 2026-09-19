@@ -124,11 +124,10 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "InAir")
 	FVector LandVelocity = FVector::ZeroVector;
 
-	/** Read on the game thread - the ability system is not safe to query from the worker update. */
 	UPROPERTY(BlueprintReadOnly, Category = "States")
 	bool bIsAiming = false;
 
-	/** How far the character has turned the mesh for the aim stance, copied on the game thread. */
+	/** How far the character has turned the mesh for the aim stance. */
 	UPROPERTY(BlueprintReadOnly, Category = "States")
 	float AimStanceYaw = 0.f;
 

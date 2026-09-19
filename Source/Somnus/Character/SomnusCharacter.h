@@ -10,6 +10,7 @@
 #include "Core/SomnusStrikeSource.h"
 #include "Core/SomnusInteractable.h"
 #include "Character/SomnusMovementTypes.h"
+#include "Camera/SomnusCameraMode.h"
 #include "SomnusCharacter.generated.h"
 
 class ASomnusWeapon;
@@ -173,6 +174,12 @@ public:
 	 *  counter-rotates the stance clips by exactly this so the weapon keeps pointing at the aim. */
 	float GetAimStanceYaw() const { return AimStanceYaw; }
 
+	/** Whether the aim ability is holding State.Aiming. The tag is asked once a frame and kept
+	 *  here so the aim stance, the camera and animation all answer from the same value, and so
+	 *  that animation never reaches into the ability system from a worker thread. */
+	UFUNCTION(BlueprintPure, Category = "GAS")
+	bool IsAiming() const { return bIsAiming; }
+
 	/** Called by the equipment component when a carried weapon is about to be destroyed - most
 	 *  often because it was dragged out of its slot while it was in a hand. Does nothing unless
 	 *  that weapon is the one currently drawn.
@@ -249,9 +256,44 @@ protected:
 
 	float AimStanceYaw = 0.f;
 
+	bool bIsAiming = false;
+
 	/** Turns the mesh rather than the capsule: movement, aim and camera stay on the capsule, while
 	 *  motion matching reads the mesh's rotation as the body's facing and picks steps to suit. */
 	void UpdateAimStanceTurn(float DeltaTime);
+
+	/** The framing the camera is moving toward. Set this from whatever decides the character is
+	 *  exploring, strafing or aiming; the camera does not read that state itself. */
+	UPROPERTY(BlueprintReadWrite, Category = "Camera")
+	ESomnusCameraFraming CameraFraming = ESomnusCameraFraming::Explore;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Framing")
+	FSomnusCameraMode ExploreCamera;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Framing")
+	FSomnusCameraMode StrafeCamera;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Framing")
+	FSomnusCameraMode MeleeAimCamera;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Framing")
+	FSomnusCameraMode GunAimCamera;
+
+	const FSomnusCameraMode& GetCameraMode(ESomnusCameraFraming Framing) const;
+
+	/** Moves the camera toward the framing it was given. Arm length, offset and field of view all
+	 *  come off one blend: moved apart they read as a camera lagging its own decision. */
+	void UpdateCamera(float DeltaTime);
+
+	/** The one place the camera's numbers are written. Blending the result of two framings rather
+	 *  than their inputs would start here too, so the rest of the class need not know which it is. */
+	void ApplyCameraMode(const FSomnusCameraMode& From, const FSomnusCameraMode& To, float Alpha);
+
+	/** Where the camera stood when the framing last changed. Read off the components rather than
+	 *  off the framing it was leaving, so a blend interrupted halfway does not jump backwards. */
+	FSomnusCameraMode CameraBlendStart;
+	ESomnusCameraFraming CameraFraming_LastFrame = ESomnusCameraFraming::Explore;
+	float CameraBlendElapsed = 0.f;
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	float RunScale = 1.0;
