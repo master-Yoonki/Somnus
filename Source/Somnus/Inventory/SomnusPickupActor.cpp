@@ -62,7 +62,7 @@ void ASomnusPickupActor::Interact_Implementation(AActor* Interactor)
 
 void ASomnusPickupActor::SetHighlighted_Implementation(bool bHighlighted)
 {
-	PickupMesh->SetCustomDepthStencilValue(bHighlighted ? SomnusStencil::Interactable : SomnusStencil::None);
+	PickupMesh->SetCustomDepthStencilValue(USomnusInteractionLibrary::HighlightStencil(bHighlighted));
 	PickupMesh->SetRenderCustomDepth(bHighlighted);
 }
 

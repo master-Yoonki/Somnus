@@ -4,16 +4,38 @@
 
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
 #include "SomnusInteractable.generated.h"
 
 /** Custom depth stencil values, which are the contract between SetHighlighted and the outline
  *  post-process material. A second outline colour later means a new value here and a branch
  *  there - not a second material. */
-namespace SomnusStencil
+UENUM(BlueprintType)
+enum class ESomnusStencil : uint8
 {
-	constexpr int32 None = 0;
-	constexpr int32 Interactable = 1;
-}
+	None			= 0		UMETA(DisplayName = "None"),
+	Interactable	= 1		UMETA(DisplayName = "Interactable"),
+};
+
+/** Blueprints implement SetHighlighted too, and SetCustomDepthStencilValue takes a plain integer.
+ *  Without this they would each carry their own literal 1, which is the outline material's
+ *  contract spelled out in as many places as there are interactable Blueprints. */
+UCLASS()
+class SOMNUS_API USomnusInteractionLibrary : public UBlueprintFunctionLibrary
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION(BlueprintPure, Category = "Interaction", meta = (CompactNodeTitle = "Stencil"))
+	static int32 StencilValue(ESomnusStencil Stencil) { return static_cast<int32>(Stencil); }
+
+	/** The whole of what a SetHighlighted implementation needs: the value to write, chosen. */
+	UFUNCTION(BlueprintPure, Category = "Interaction")
+	static int32 HighlightStencil(bool bHighlighted)
+	{
+		return StencilValue(bHighlighted ? ESomnusStencil::Interactable : ESomnusStencil::None);
+	}
+};
 
 // This class does not need to be modified.
 UINTERFACE(MinimalAPI)

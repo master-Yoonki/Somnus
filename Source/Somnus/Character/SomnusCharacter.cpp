@@ -303,7 +303,7 @@ void ASomnusCharacter::SetHighlighted_Implementation(bool bHighlighted)
 		return;
 	}
 
-	BodyMesh->SetCustomDepthStencilValue(bHighlighted ? SomnusStencil::Interactable : SomnusStencil::None);
+	BodyMesh->SetCustomDepthStencilValue(USomnusInteractionLibrary::HighlightStencil(bHighlighted));
 	BodyMesh->SetRenderCustomDepth(bHighlighted);
 }
 
