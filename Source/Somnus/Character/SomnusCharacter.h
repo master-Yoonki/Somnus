@@ -3,8 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Character.h"
-#include "AbilitySystemInterface.h"
+#include "Character/SomnusCharacterBase.h"
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
 #include "Core/SomnusStrikeSource.h"
@@ -25,7 +24,7 @@ class USomnusItemAnimLayers;
  * Acts as the physical avatar for the GAS component stored in the PlayerState.
  */
 UCLASS()
-class SOMNUS_API ASomnusCharacter : public ACharacter, public IAbilitySystemInterface, public ISomnusStrikeSource, public ISomnusInteractable
+class SOMNUS_API ASomnusCharacter : public ASomnusCharacterBase, public ISomnusStrikeSource, public ISomnusInteractable
 {
 	GENERATED_BODY()
 
@@ -112,13 +111,7 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interact", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class USomnusInteractorComponent> InteractorComponent;
-	
-	// Physics-based flinch on non-lethal hits
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HitReact", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<class USomnusHitReactComponent> HitReact;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HitReact", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<class UPhysicsControlComponent> PhysicsControl;
 
 public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "UI")
@@ -133,28 +126,12 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "GAS|UI")
 	void UpdateStaminaUI(float CurrentStamina, float MaxStamina);
 
-	// Called when Health reaches zero. Cancels abilities, ragdolls.
-	// HitDirection is the direction of the killing blow (for ragdoll impulse). Zero = no impulse.
-	UFUNCTION(BlueprintCallable, Category = "GAS")
-	virtual void Die(const FVector& HitDirection = FVector::ZeroVector);
-
-	UFUNCTION(BlueprintPure, Category = "GAS")
-	bool IsDead() const;
-
 protected:
-	/** Set on death and never cleared. The ability system lives on the PlayerState, which
-	 *  unpossessing hands to the next pawn - a corpse asked through the ASC alone would answer
-	 *  that it is alive, and so would a character placed in the level that never had one. */
-	UPROPERTY(ReplicatedUsing = OnRep_Dead, VisibleInstanceOnly, BlueprintReadOnly, Category = "GAS")
-	bool bDead = false;
+	/** A looter who dies stops looting, and a body stops holding its weapon. */
+	virtual void HandleServerDeath() override;
 
-	UFUNCTION()
-	void OnRep_Dead();
-
-	/** Everything about being a corpse that has to hold on every machine for as long as the body
-	 *  lasts. Idempotent on purpose: it arrives by replication, by multicast, or by both in
-	 *  either order, and none of those know about the others. */
-	void ApplyDeathState();
+	/** The death screen, on the machine of the player who died. */
+	virtual void HandleDeathEvent(const FVector& HitDirection) override;
 
 public:
 
@@ -230,14 +207,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Movement")
 	FVector GetLandVelocity() const { return LandVelocity; }
 protected:
-	// GEs applied to the ASC at possession (e.g., stamina regen, passive buffs)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
-	TArray<TSubclassOf<UGameplayEffect>> DefaultGameplayEffects;
-
-	// Abilities granted at possession time (innate abilities like Jump)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
-	TArray<TSubclassOf<UGameplayAbility>> DefaultAbilities;
-
 	// Currently equipped weapon (null = unarmed)
 	UPROPERTY(Transient, ReplicatedUsing = OnRep_EquippedWeapon)
 	TObjectPtr<ASomnusWeapon> EquippedWeapon;
@@ -325,14 +294,4 @@ protected:
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere, Category = "Movement")
 	ESomnusGait Gait;
 	
-
-
-	// Guards against double-granting on repossession/respawn
-	bool bDefaultAbilitiesGiven = false;
-	bool bDefaultEffectsApplied = false;
-
-private:
-	// Multicast: runs ragdoll and visual death effects on all machines
-	UFUNCTION(NetMulticast, Reliable)
-	void MulticastDeath(const FVector& HitDirection);
 };

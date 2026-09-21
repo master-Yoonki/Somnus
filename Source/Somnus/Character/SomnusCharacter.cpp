@@ -77,13 +77,7 @@ ASomnusCharacter::ASomnusCharacter()
 	
 	InteractorComponent = CreateDefaultSubobject<USomnusInteractorComponent>(TEXT("InteractorComponent"));
 
-	HitReact = CreateDefaultSubobject<USomnusHitReactComponent>(TEXT("HitReact"));
-
-	PhysicsControl = CreateDefaultSubobject<UPhysicsControlComponent>(TEXT("PhysicsControl"));
-
 	Gait = ESomnusGait::Walk;
-	
-	GetMesh()->PhysicsTransformUpdateMode = EPhysicsTransformUpdateMode::ComponentTransformIsKinematic;
 }
 
 void ASomnusCharacter::Tick(float DeltaTime)
@@ -138,35 +132,7 @@ void ASomnusCharacter::PossessedBy(AController* NewController)
 	{
 		UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent();
 		ASC->InitAbilityActorInfo(PS, this);
-
-		// Apply default GEs (stamina regen, passive buffs, etc.) — guarded against repossession
-		if (!bDefaultEffectsApplied)
-		{
-			for (const TSubclassOf<UGameplayEffect>& GEClass : DefaultGameplayEffects)
-			{
-				if (!GEClass) continue;
-				FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
-				ContextHandle.AddSourceObject(this);
-				FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(GEClass, 1.0f, ContextHandle);
-				if (SpecHandle.IsValid())
-				{
-					ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-				}
-			}
-			bDefaultEffectsApplied = true;
-		}
-
-		// Grant innate abilities (e.g., Jump) — guarded against repossession
-		if (!bDefaultAbilitiesGiven)
-		{
-			for (const TSubclassOf<UGameplayAbility>& AbilityClass : DefaultAbilities)
-			{
-				if (!AbilityClass) continue;
-				FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
-				ASC->GiveAbility(Spec);
-			}
-			bDefaultAbilitiesGiven = true;
-		}
+		GrantDefaults(ASC);
 
 		if (IsLocallyControlled())
 		{
@@ -180,7 +146,6 @@ void ASomnusCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ASomnusCharacter, EquippedWeapon);
-	DOREPLIFETIME(ASomnusCharacter, bDead);
 }
 
 TArray<FSomnusStrikeSourceInfo> ASomnusCharacter::GetStrikeSources() const
@@ -618,15 +583,8 @@ void ASomnusCharacter::AddInputMappingContext() const
 	}
 }
 
-void ASomnusCharacter::Die(const FVector& HitDirection)
+void ASomnusCharacter::HandleServerDeath()
 {
-	// Death is a server decision, and bDead is replicated - a client must never set it locally.
-	if (!HasAuthority() || IsDead()) return;
-
-	// Set before anything that could bail out. Whether this body is a corpse must not depend on
-	// whether there happened to be an ability system left to clean up.
-	bDead = true;
-
 	// A looter who dies stops looting. Being looted is unaffected - that session belongs to
 	// whoever opened this body, and their component keeps re-checking it from their side.
 	if (LootComponent)
@@ -643,88 +601,17 @@ void ASomnusCharacter::Die(const FVector& HitDirection)
 		EquippedWeapon = nullptr;
 		UpdateWeaponAnimLayers(nullptr);
 	}
-
-	// Only clean up an ability system that exists. It lives on the PlayerState, which a character
-	// placed in the level never had and an unpossessed corpse no longer has.
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
-	{
-		ASC->CancelAllAbilities();
-
-		// Regen, buffs and anything else that has no business ticking on a body.
-		FGameplayTagContainer EffectTagsToRemove;
-		EffectTagsToRemove.AddTag(SomnusTags::Effect_RemoveOnDeath);
-		ASC->RemoveActiveEffectsWithGrantedTags(EffectTagsToRemove);
-
-		// Kept alongside bDead rather than replaced by it: the tag is what blocks abilities while
-		// the ability system is still attached, which is a different question from "is this a corpse".
-		ASC->AddLooseGameplayTag(SomnusTags::State_Dead, 1, EGameplayTagReplicationState::TagOnly);
-	}
-
-	// Outside the block on purpose - the ragdoll has to happen either way. No hand call to
-	// ApplyDeathState here the way OnRep_LootTarget needs one: a multicast runs locally on the
-	// authority too (Actor.cpp:5500-5519), so the server gets its half from this line.
-	MulticastDeath(HitDirection);
 }
 
-void ASomnusCharacter::ApplyDeathState()
+void ASomnusCharacter::HandleDeathEvent(const FVector& HitDirection)
 {
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	GetCharacterMovement()->SetMovementMode(MOVE_None);
-
-	GetMesh()->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-
-	// Going slack goes through the hit react component rather than the mesh directly: it owns the
-	// physics control body modifiers, and those reassert the movement type. Setting bodies to
-	// simulate behind its back leaves them kinematic, which reads on screen as a frozen pose.
-	if (HitReact)
-	{
-		HitReact->SetPhysicsPose(ESomnusPhysicsPose::Limp);
-	}
-}
-
-void ASomnusCharacter::OnRep_Dead()
-{
-	// The half of dying that has to survive being missed. A machine that was not watching - out
-	// of relevancy, or not yet connected when the body fell - never hears the multicast, and
-	// would otherwise be left with a corpse standing up and playing its idle forever.
-	if (bDead)
-	{
-		ApplyDeathState();
-	}
-}
-
-void ASomnusCharacter::MulticastDeath_Implementation(const FVector& HitDirection)
-{
-	// Called here as well as from OnRep_Dead because the two have no ordering guarantee between
-	// them. Arriving first, this is what has the mesh simulating in time for the impulse below;
-	// arriving second, it costs nothing.
-	ApplyDeathState();
-
-	// Kept an event rather than moved into the state above, because it only means anything at the
-	// instant it happens. A machine that missed it wants the body, not a shove five seconds late.
-	if (!HitDirection.IsNearlyZero())
-	{
-		GetMesh()->AddImpulse(HitDirection * 1500.0f, NAME_None, true);
-	}
-
-	// Notify Blueprint for death UI (owning client only). The controller has to be a player
-	// controller, not merely a local one: IsLocalController() is unconditionally true in
-	// standalone (Controller.cpp:90), so an AI-possessed body would put a death screen on the
-	// local player's viewport.
+	// Death UI for the owning client only. The controller has to be a player controller, not
+	// merely a local one: IsLocalController() is unconditionally true in standalone
+	// (Controller.cpp:90), so an AI-possessed body would put a death screen on the local viewport.
 	if (const APlayerController* PC = Cast<APlayerController>(GetController()); PC && PC->IsLocalController())
 	{
 		OnDeath();
 	}
-}
-
-bool ASomnusCharacter::IsDead() const
-{
-	// bDead is checked first because an unpossessed corpse has no PlayerState, and therefore no
-	// ability system to ask.
-	if (bDead) return true;
-
-	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
-	return ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Dead);
 }
 
 void ASomnusCharacter::ServerRequestRespawn_Implementation()

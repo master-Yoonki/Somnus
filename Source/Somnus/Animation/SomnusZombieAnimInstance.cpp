@@ -3,35 +3,9 @@
 
 #include "Animation/SomnusZombieAnimInstance.h"
 
-#include "AbilitySystemComponent.h"
-#include "Character/Zombie/SomnusZombieCharacter.h"
-#include "Core/SomnusGameplayTags.h"
-#include "GameFramework/CharacterMovementComponent.h"
-
-void USomnusZombieAnimInstance::NativeInitializeAnimation()
+void USomnusZombieAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 {
-	Super::NativeInitializeAnimation();
-	CachedCharacter = Cast<ASomnusZombieCharacter>(TryGetPawnOwner());
-	if (CachedCharacter)
-	{
-		MovementComponent = CachedCharacter->GetCharacterMovement();
-	}
-}
+	Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
 
-void USomnusZombieAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
-{
-	Super::NativeUpdateAnimation(DeltaSeconds);
-
-	if (!CachedCharacter || !MovementComponent)
-	{
-		return;
-	}
-
-	GroundSpeed = MovementComponent->Velocity.Size2D();
-	bIsMoving = GroundSpeed > 3.0f;
-
-	if (const UAbilitySystemComponent* ASC = CachedCharacter->GetAbilitySystemComponent())
-	{
-		bIsDead = ASC->HasMatchingGameplayTag(SomnusTags::State_Dead);
-	}
+	bIsMoving = Speed2D > 3.0f;
 }

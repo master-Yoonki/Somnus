@@ -11,15 +11,6 @@
 #include "GameFramework/CharacterMovementComponent.h"
 
 
-void USomnusCharacterAnimInstance::NativeInitializeAnimation()
-{
-	Super::NativeInitializeAnimation();
-	if (ASomnusCharacter* SomnusCharacter = GetSomnusCharacter())
-	{
-		CharacterMovement = SomnusCharacter->GetCharacterMovement();
-	}
-}
-
 void USomnusCharacterAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
@@ -109,7 +100,6 @@ void USomnusCharacterAnimInstance::UpdateEssentialValues(float DeltaSeconds)
 	
 	Velocity_LastFrame = Velocity;
 	Velocity = CharacterMovement->Velocity;
-	Speed2D = Velocity.Size2D();
 	bHasVelocity = Speed2D > 5.0;
 	VelocityAcceleration = (Velocity - Velocity_LastFrame) / FMath::Max(DeltaSeconds, 0.001);
 	if (bHasVelocity)

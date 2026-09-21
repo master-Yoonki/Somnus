@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Animation/AnimInstance.h"
+#include "Animation/SomnusAnimInstanceBase.h"
 #include "Character/SomnusMovementTypes.h"
 #include "Animation/AnimNodeReference.h"
 #include "SomnusCharacterAnimInstance.generated.h"
@@ -15,11 +15,10 @@ class ASomnusCharacter;
  * character's state into something the graph can read on a worker thread.
  */
 UCLASS()
-class SOMNUS_API USomnusCharacterAnimInstance : public UAnimInstance
+class SOMNUS_API USomnusCharacterAnimInstance : public USomnusAnimInstanceBase
 {
 	GENERATED_BODY()
 public:
-	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 	virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
 	
@@ -43,7 +42,6 @@ public:
 
 	ESomnusGait GetGait() const { return Gait; }
 	ESomnusMovementState GetMovementState() const { return MovementState; }
-	float GetSpeed2D() const { return Speed2D; }
 	bool IsAiming() const { return bIsAiming; }
 	float GetAimStanceYaw() const { return AimStanceYaw; }
 	float GetUpperBodyYawOffset() const { return UpperBodyYawOffset; }
@@ -56,9 +54,6 @@ protected:
 
 	/** Game thread only - this is where the character is asked anything. */
 	virtual void UpdateStates();
-	
-	UPROPERTY(BlueprintReadOnly, Category = "Components")
-	class UCharacterMovementComponent* CharacterMovement;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	bool bHasOwningActor;
@@ -73,8 +68,6 @@ protected:
 	
 	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	float AccelerationAmount;
-	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
-	float Speed2D;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "EssentialValues")
 	bool bHasAcceleration;
