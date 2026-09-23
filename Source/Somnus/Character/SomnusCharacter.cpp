@@ -32,12 +32,14 @@
 #include "Core/SomnusCollisionChannels.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Character/SomnusHitReactComponent.h"
+#include "Character/SomnusCharacterMovementComponent.h"
 #include "Equipment/SomnusMeleeWeapon.h"
 #include "PhysicsControlComponent.h"
 #include "Core/SomnusInteractorComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 
-ASomnusCharacter::ASomnusCharacter()
+ASomnusCharacter::ASomnusCharacter(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<USomnusCharacterMovementComponent>(CharacterMovementComponentName))
 {
 	// Use our custom input component for Lyra-style input binding
 	OverrideInputComponentClass = USomnusInputComponent::StaticClass();
@@ -90,6 +92,7 @@ void ASomnusCharacter::Tick(float DeltaTime)
 	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
 	bIsAiming = ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
 
+	UpdateLocomotionState();
 	UpdateAimStanceTurn(DeltaTime);
 	UpdateCamera(DeltaTime);
 
@@ -146,6 +149,11 @@ void ASomnusCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ASomnusCharacter, EquippedWeapon);
+
+	// The owner works both out from its own input a round trip before the server's copy could
+	// arrive, so only the machines that merely watch are sent them.
+	DOREPLIFETIME_CONDITION(ASomnusCharacter, Gait, COND_SimulatedOnly);
+	DOREPLIFETIME_CONDITION(ASomnusCharacter, bIsStrafing, COND_SimulatedOnly);
 }
 
 TArray<FSomnusStrikeSourceInfo> ASomnusCharacter::GetStrikeSources() const
@@ -314,19 +322,6 @@ void ASomnusCharacter::NotifyCarriedWeaponRetiring(ASomnusWeapon* Weapon)
 	UpdateWeaponAnimLayers(nullptr);
 }
 
-FVector2D ASomnusCharacter::ClampInputScale(FVector2D InputScale) const
-{
-	FVector2D NormalizedInput = UKismetMathLibrary::Normal2D(InputScale);
-	if (InputScale.Length() > RunScaleThreshold)
-	{
-		return NormalizedInput * RunScale;
-	}
-	else
-	{
-		return NormalizedInput * WalkScale;
-	}
-}
-
 void ASomnusCharacter::OnRep_EquippedWeapon(ASomnusWeapon* OldWeapon)
 {
 	// Hide old weapon, show new. IsValid rather than a null test: the value that arrived here can
@@ -368,6 +363,29 @@ void ASomnusCharacter::UpdateWeaponAnimLayers(const ASomnusWeapon* NewWeapon)
 		SkelMesh->LinkAnimClassLayers(NewLayerClass);
 	}
 	LinkedItemLayerClass = NewLayerClass;
+}
+
+USomnusCharacterMovementComponent* ASomnusCharacter::GetSomnusMovement() const
+{
+	return CastChecked<USomnusCharacterMovementComponent>(GetCharacterMovement());
+}
+
+void ASomnusCharacter::UpdateLocomotionState()
+{
+	USomnusCharacterMovementComponent* Movement = GetSomnusMovement();
+
+	// A watching machine has neither the wishes nor the moves, so it takes both from the server.
+	// It runs no moves either, so nothing else sets its turn flags - and its animation reads them
+	// to predict where the body will face. Set every tick rather than on arrival: the starting
+	// value is never sent, and the flags start as whatever the blueprint left them.
+	if (GetLocalRole() == ROLE_SimulatedProxy)
+	{
+		Movement->ApplyRotationMode(bIsStrafing);
+		return;
+	}
+
+	Gait = Movement->ResolveDisplayedGait(Gait);
+	bIsStrafing = Movement->WantsToStrafe();
 }
 
 ESomnusMovementMode ASomnusCharacter::GetMovementMode() const
@@ -475,8 +493,10 @@ void ASomnusCharacter::Move(const FInputActionValue& Value)
 		}
 	}
 
-	// Input is a Vector2D
-	FVector2D MovementVector = ClampInputScale(Value.Get<FVector2D>());
+	// Passed through as it comes. Gait is the movement component's to decide, from the walk and
+	// sprint wishes, so the input only says which way and how hard; the component clamps a
+	// keyboard diagonal back to unit length itself (ScaleInputAcceleration).
+	const FVector2D MovementVector = Value.Get<FVector2D>();
 	
 	if (Controller != nullptr)
 	{

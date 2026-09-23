@@ -29,7 +29,9 @@ class SOMNUS_API ASomnusCharacterBase : public ACharacter, public IAbilitySystem
 	GENERATED_BODY()
 
 public:
-	ASomnusCharacterBase();
+	/** Takes an initializer so a subclass can swap a default subobject, such as the movement
+	 *  component; defaulted so one that swaps nothing need not know it exists. */
+	ASomnusCharacterBase(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override
 		PURE_VIRTUAL(ASomnusCharacterBase::GetAbilitySystemComponent, return nullptr;);

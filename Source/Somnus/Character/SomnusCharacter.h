@@ -18,6 +18,7 @@ class UGameplayEffect;
 class USomnusInputConfig;
 class USomnusInventoryComponent;
 class USomnusItemAnimLayers;
+class USomnusCharacterMovementComponent;
 
 /**
  * Base character class for Project Somnus.
@@ -29,7 +30,7 @@ class SOMNUS_API ASomnusCharacter : public ASomnusCharacterBase, public ISomnusS
 	GENERATED_BODY()
 
 public:
-	ASomnusCharacter();
+	ASomnusCharacter(const FObjectInitializer& ObjectInitializer);
 
 	// Implement IAbilitySystemInterface to fetch ASC from PlayerState
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
@@ -186,8 +187,17 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerSwitchWeapon(int32 SlotIndex);
 
-	UFUNCTION()
+	/** The gait animation shows. See Gait. */
+	UFUNCTION(BlueprintPure, Category = "Movement")
 	ESomnusGait GetGait() const { return Gait; }
+
+	/** Whether the body is held square to the camera. See bIsStrafing. */
+	UFUNCTION(BlueprintPure, Category = "Movement")
+	bool IsStrafing() const { return bIsStrafing; }
+
+	/** The movement component as the class it is always created as (see the constructor). */
+	UFUNCTION(BlueprintPure, Category = "Movement")
+	USomnusCharacterMovementComponent* GetSomnusMovement() const;
 
 	// Console: dumps this machine's view of every character's containers - each compartment's
 	// grid, its contents, and the ASomnusContainerActor behind any container item, recursing
@@ -264,18 +274,6 @@ protected:
 	ESomnusCameraFraming CameraFraming_LastFrame = ESomnusCameraFraming::Explore;
 	float CameraBlendElapsed = 0.f;
 	
-	UPROPERTY(EditDefaultsOnly, Category = "Input")
-	float RunScale = 1.0;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Input")
-	float RunScaleThreshold = 0.75;
-	
-	UPROPERTY(EditDefaultsOnly, Category = "Input")
-	float WalkScale = 0.5; 
-	
-	UFUNCTION(Category = "Input")
-	FVector2D ClampInputScale(FVector2D InputScale) const;
-	
 	UFUNCTION()
 	void OnRep_EquippedWeapon(ASomnusWeapon* OldWeapon);
 
@@ -291,7 +289,17 @@ protected:
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere, Category = "Movement")
 	bool bJustLanded;
 
-	UPROPERTY(BlueprintReadWrite, VisibleAnywhere, Category = "Movement")
+	/** The gait animation shows. Worked out every tick from the movement component by the machines
+	 *  that run this character's moves - its owner, straight from its own input, and the server -
+	 *  and sent from the server to everyone else, who have no wishes to work it out from. */
+	UPROPERTY(Transient, Replicated, BlueprintReadOnly, VisibleAnywhere, Category = "Movement")
 	ESomnusGait Gait;
-	
+
+	/** Kept, and sent to the machines that only watch, for the same reason as Gait. */
+	UPROPERTY(Transient, Replicated, BlueprintReadOnly, VisibleAnywhere, Category = "Movement")
+	bool bIsStrafing = false;
+
+	/** Refreshes Gait and bIsStrafing on the machines that run this character's moves, and on the
+	 *  ones that only watch, hands the replicated strafe state to the movement component. */
+	void UpdateLocomotionState();
 };

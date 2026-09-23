@@ -12,7 +12,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 
-ASomnusCharacterBase::ASomnusCharacterBase()
+ASomnusCharacterBase::ASomnusCharacterBase(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
 {
 	// Named exactly as each subclass named them before the base existed. A blueprint stores its
 	// overrides on a component against the component's name, and a rename would drop them quietly.
