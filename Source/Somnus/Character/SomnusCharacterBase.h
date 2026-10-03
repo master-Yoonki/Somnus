@@ -50,6 +50,16 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "GAS")
 	FSomnusCharacterDiedSignature OnDied;
 
+	/** Holds this body's animation at RateScale for Duration, on this machine only. A second call
+	 *  while held extends the hold rather than stacking. The capsule keeps moving; only the pose
+	 *  freezes, which is all a hit stop is allowed to touch when world time is shared. */
+	void ApplyHitStop(float Duration, float RateScale);
+
+	/** Keeps State.InAir in step with the movement mode. Called on every machine by the movement
+	 *  component - the server and the owner from their own simulation, the others when the
+	 *  replicated mode lands - so each works the tag out for itself and nothing replicates it. */
+	virtual void OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode = 0) override;
+
 protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -69,6 +79,15 @@ protected:
 	 *  lasts. Idempotent on purpose: it arrives by replication, by multicast, or by both in either
 	 *  order, and none of those know about the others. */
 	virtual void ApplyDeathState();
+
+	/** Sets State.InAir to whether the body is falling right now. Also called wherever the ability
+	 *  system first becomes reachable, since a mode change before then had nowhere to put it. */
+	void RefreshInAirTag();
+
+	/** Puts the animation rate back once a hit stop runs out. */
+	void EndHitStop();
+
+	FTimerHandle HitStopTimerHandle;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
 	TArray<TSubclassOf<UGameplayEffect>> DefaultGameplayEffects;

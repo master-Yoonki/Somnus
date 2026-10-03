@@ -141,3 +141,36 @@ void ASomnusCharacterBase::ApplyDeathState()
 		HitReact->SetPhysicsPose(ESomnusPhysicsPose::Limp);
 	}
 }
+
+void ASomnusCharacterBase::ApplyHitStop(float Duration, float RateScale)
+{
+	if (Duration <= 0.f) return;
+	if (IsDead()) return;
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		MeshComp->GlobalAnimRateScale = RateScale;
+		GetWorldTimerManager().SetTimer(HitStopTimerHandle, this, &ASomnusCharacterBase::EndHitStop, Duration);
+	}
+}
+
+void ASomnusCharacterBase::EndHitStop()
+{
+	if (USkeletalMeshComponent* MeshComp = GetMesh())
+	{
+		MeshComp->GlobalAnimRateScale = 1.0;
+	}
+}
+
+void ASomnusCharacterBase::OnMovementModeChanged(EMovementMode PrevMovementMode, uint8 PreviousCustomMode)
+{
+	Super::OnMovementModeChanged(PrevMovementMode, PreviousCustomMode);
+	RefreshInAirTag();
+}
+
+void ASomnusCharacterBase::RefreshInAirTag()
+{
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		ASC->SetLooseGameplayTagCount(SomnusTags::State_InAir, GetCharacterMovement()->IsFalling() ? 1 : 0);
+	}
+}

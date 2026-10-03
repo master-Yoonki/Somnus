@@ -31,6 +31,11 @@ public:
 	// behavior tree, so the zombie just stands still.
 	bool ShouldDisableAI() const { return bDisableAI; }
 
+	/** How much of a player's push into this zombie it soaks up, 0 to 1. A player walking into it
+	 *  keeps the rest of that speed and carries the zombie along at it. Read on both the owning
+	 *  client and the server within the player's move, so it has to be a value both have. */
+	float GetCrowdResistance() const { return CrowdResistance; }
+
 protected:
 	/** Nothing searches a zombie's body, so it hands back its controller and clears away. */
 	virtual void HandleServerDeath() override;
@@ -44,6 +49,10 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<USomnusAttributeSet> AttributeSet;
+
+	/** See GetCrowdResistance. 0 is pushed aside for free, 1 cannot be pushed at all. */
+	UPROPERTY(EditDefaultsOnly, Category = "Movement|Crowd", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float CrowdResistance = 0.5f;
 
 	/** How long a body lies before it is cleared away. */
 	UPROPERTY(EditDefaultsOnly, Category = "GAS", meta = (ClampMin = "0", Units = "Seconds"))

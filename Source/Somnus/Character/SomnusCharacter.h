@@ -302,4 +302,20 @@ protected:
 	/** Refreshes Gait and bIsStrafing on the machines that run this character's moves, and on the
 	 *  ones that only watch, hands the replicated strafe state to the movement component. */
 	void UpdateLocomotionState();
+
+	/** How hard an overlap that nobody is pushing into gets eased apart, as the share of it closed
+	 *  per second - a zombie that walked into a standing player, say. */
+	UPROPERTY(EditDefaultsOnly, Category = "Movement|Crowd", meta = (ClampMin = "0.0"))
+	float CrowdPushStrength = 8.f;
+
+	/** Moves each overlapping zombie by ComputeZombieShove, swept. Server only - zombies are the
+	 *  server's to move, and their new places replicate. */
+	void PushOverlappingZombies(float DeltaTime);
+
+	/** Where one zombie should go this tick, made of three parts along the line from this body to it:
+	 *  carried at the speed this body is moving into it, which the movement component has already
+	 *  cut to what the zombie's resistance leaves; eased out by part of whatever overlap is left;
+	 *  and pushed straight back out of anything past the movement component's penetration limit,
+	 *  so a zombie walking into the player cannot reach its centre either. */
+	FVector ComputeZombieShove(const ACharacter* Zombie, float DeltaTime) const;
 };

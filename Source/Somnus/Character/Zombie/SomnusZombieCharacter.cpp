@@ -5,6 +5,8 @@
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystem/Attributes/SomnusAttributeSet.h"
+#include "Components/CapsuleComponent.h"
+#include "Core/SomnusCollisionChannels.h"
 
 ASomnusZombieCharacter::ASomnusZombieCharacter()
 {
@@ -14,6 +16,8 @@ ASomnusZombieCharacter::ASomnusZombieCharacter()
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
 
 	AttributeSet = CreateDefaultSubobject<USomnusAttributeSet>("AttributeSet");
+
+	GetCapsuleComponent()->SetCollisionProfileName(SomnusCollision::ZombieProfile);
 }
 
 void ASomnusZombieCharacter::PossessedBy(AController* NewController)
@@ -22,6 +26,7 @@ void ASomnusZombieCharacter::PossessedBy(AController* NewController)
 
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
 	GrantDefaults(AbilitySystemComponent);
+	RefreshInAirTag();
 }
 
 TArray<FSomnusStrikeSourceInfo> ASomnusZombieCharacter::GetStrikeSources() const

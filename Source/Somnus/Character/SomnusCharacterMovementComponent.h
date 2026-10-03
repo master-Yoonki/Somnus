@@ -135,6 +135,15 @@ public:
 	 *  animation still reads these flags to predict where the body will face. */
 	void ApplyRotationMode(bool bStrafing);
 
+	/** Zombies whose capsules overlap this one's, inflated by CrowdQueryInflation so a body
+	 *  pressed right against the capsule still counts. Shared by the slowdown here and by the
+	 *  character's shove, so both agree on who is in the way. */
+	void FindOverlappingZombies(TArray<AActor*>& OutZombies) const;
+
+	/** How deep this capsule may sink into a zombie. The server's shove reads it too, to push back
+	 *  out a zombie that walked in past it. */
+	float GetCrowdMaxPenetration() const { return CrowdMaxPenetration; }
+
 protected:
 	/** Sets how the body turns for this move from the strafe wish and whether it is in the air.
 	 *  Runs inside every move - the client's, the server's replay of it, and a correction replay -
@@ -190,6 +199,32 @@ protected:
 	/** How far off the facing a sprint already shown may drift before it is shown as a run. */
 	UPROPERTY(EditDefaultsOnly, Category = "Movement|Animation", meta = (ClampMin = "0.0", ClampMax = "180.0", Units = "Degrees"))
 	float SprintDisplayExitAngle = 60.f;
+
+	/** How far past the capsule's own radius a zombie still counts as in the way. */
+	UPROPERTY(EditDefaultsOnly, Category = "Movement|Crowd", meta = (ClampMin = "0.0", Units = "Centimeters"))
+	float CrowdQueryInflation = 10.f;
+
+	/** How deep the capsule may sink into a zombie before heading further in is refused outright.
+	 *  Well short of the zombie's centre, so a zombie that cannot give way - a wall or a crowd
+	 *  behind it - holds like one instead of being walked through. */
+	UPROPERTY(EditDefaultsOnly, Category = "Movement|Crowd", meta = (ClampMin = "0.0", Units = "Centimeters"))
+	float CrowdMaxPenetration = 15.f;
+
+	/** Finds the crowd once per move and keeps it for the contact resistance. Here rather than in
+	 *  CalcVelocity because that runs several times a move, and an overlap query each time would be
+	 *  paid for nothing. */
+	void UpdateCrowd();
+
+	/** Limits the part of Velocity heading into each zombie in CrowdThisMove: to what is left of
+	 *  this move's top speed once the zombie's resistance is taken off, which is the speed the two
+	 *  travel at together while the server carries the zombie along; and to nothing once the capsule
+	 *  is CrowdMaxPenetration deep, where a zombie that could not be carried holds like a wall.
+	 *  Sideways motion is left alone, so a held zombie is slid along rather than stuck to. */
+	void ApplyCrowdContactResistance(float DeltaTime);
+
+	/** The zombies UpdateCrowd found for the move being run. Weak, since one can be destroyed
+	 *  between the query and its use. */
+	TArray<TWeakObjectPtr<AActor>> CrowdThisMove;
 
 private:
 	/** Whether the owner's ability system carries State.Aiming. */

@@ -64,8 +64,10 @@ namespace SomnusTags
 
 	// Character state
 	UE_DEFINE_GAMEPLAY_TAG(State_Aiming, "State.Aiming");
+	UE_DEFINE_GAMEPLAY_TAG(State_InAir, "State.InAir");
 	UE_DEFINE_GAMEPLAY_TAG(State_MovementCancellable, "State.MovementCancellable");
 	UE_DEFINE_GAMEPLAY_TAG(State_Dead, "State.Dead");
+	UE_DEFINE_GAMEPLAY_TAG(State_Staggered, "State.Staggered");
 
 	// Effect policy tags
 	UE_DEFINE_GAMEPLAY_TAG(Effect_RemoveOnDeath, "Effect.RemoveOnDeath");
@@ -84,4 +86,7 @@ namespace SomnusTags
 	// Zombie
 	// Zombie Ability identity tags
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Zombie_Melee, "Ability.Zombie.Melee");
+
+	// Gameplay cues
+	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Hit_Melee, "GameplayCue.Hit.Melee");
 }

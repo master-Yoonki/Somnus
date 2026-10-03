@@ -98,8 +98,10 @@ namespace SomnusTags
 
 	// Character state
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Aiming);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_InAir);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_MovementCancellable);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Staggered);
 
 	// Effect policy tags — used to batch-remove effects on death
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_RemoveOnDeath);
@@ -118,4 +120,7 @@ namespace SomnusTags
 	// Zombie
 	// Zombie Ability identity tags
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Zombie_Melee);
+
+	// Gameplay cues
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(GameplayCue_Hit_Melee);
 };

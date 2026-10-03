@@ -5,9 +5,14 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Character/SomnusCharacter.h"
+#include "Character/Zombie/SomnusZombieCharacter.h"
+#include "Components/CapsuleComponent.h"
+#include "Core/SomnusCollisionChannels.h"
 #include "Core/SomnusGameplayTags.h"
+#include "Engine/OverlapResult.h"
 #include "Equipment/SomnusWeapon.h"
 #include "GameFramework/Character.h"
+#include "Kismet/KismetMathLibrary.h"
 
 namespace SomnusMoveFlags
 {
@@ -142,6 +147,11 @@ void USomnusCharacterMovementComponent::CalcVelocity(float DeltaTime, float Fric
 	}
 
 	Super::CalcVelocity(DeltaTime, Friction, bFluid, BrakingDeceleration);
+
+	// After the engine has built this move's velocity, so the crowd gets the last word on how much
+	// of it may head into a zombie. In the air as well as on the ground - falling builds its sideways
+	// velocity through here too, and a zombie is no easier to pass for jumping at it.
+	ApplyCrowdContactResistance(DeltaTime);
 }
 
 ESomnusGait USomnusCharacterMovementComponent::GetRequestedGait() const
@@ -205,6 +215,7 @@ void USomnusCharacterMovementComponent::UpdateCharacterStateBeforeMovement(float
 	Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
 
 	ApplyRotationMode(bWantsToStrafe);
+	UpdateCrowd();
 }
 
 const FSomnusGaitSettings& USomnusCharacterMovementComponent::GetGaitSettings(ESomnusGait Gait) const
@@ -272,6 +283,90 @@ float USomnusCharacterMovementComponent::GetBodyFacingYaw() const
 	const ASomnusCharacter* SomnusCharacter = Cast<ASomnusCharacter>(CharacterOwner);
 	const ASomnusWeapon* Weapon = SomnusCharacter ? SomnusCharacter->GetEquippedWeapon() : nullptr;
 	return Weapon ? CapsuleYaw + Weapon->GetAimStanceYaw() : CapsuleYaw;
+}
+
+void USomnusCharacterMovementComponent::FindOverlappingZombies(TArray<AActor*>& OutZombies) const
+{
+	if (!CharacterOwner) return;
+	UCapsuleComponent* CapsuleComponent = CharacterOwner->GetCapsuleComponent();
+	if (!CapsuleComponent) return;
+	FCollisionShape CapsuleCollisionShape = FCollisionShape::MakeCapsule(
+		CapsuleComponent->GetScaledCapsuleRadius() + CrowdQueryInflation, 
+		CapsuleComponent->GetScaledCapsuleHalfHeight());
+	
+	TArray<FOverlapResult> OverlapResults; 
+	
+	GetWorld()->OverlapMultiByObjectType(OverlapResults, CharacterOwner->GetActorLocation(), 
+		FQuat::Identity, FCollisionObjectQueryParams(SomnusCollision::Zombie),
+		CapsuleCollisionShape, 
+		FCollisionQueryParams(SCENE_QUERY_STAT(CrowdQuery), false, CharacterOwner));
+	
+	for (const FOverlapResult& OverlapResult : OverlapResults)
+	{
+		OutZombies.AddUnique(OverlapResult.GetActor());
+	}
+}
+
+void USomnusCharacterMovementComponent::UpdateCrowd()
+{
+	TArray<AActor*> OverlappingZombies;
+	FindOverlappingZombies(OverlappingZombies);
+
+	CrowdThisMove.Reset(OverlappingZombies.Num());
+	for (AActor* Zombie : OverlappingZombies)
+	{
+		CrowdThisMove.Add(Zombie);
+	}
+}
+
+void USomnusCharacterMovementComponent::ApplyCrowdContactResistance(float DeltaTime)
+{
+	if (!CharacterOwner) return;
+
+	const FVector OwnLocation = CharacterOwner->GetActorLocation();
+	const float OwnRadius = CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleRadius();
+
+	for (const TWeakObjectPtr<AActor>& CrowdMember : CrowdThisMove)
+	{
+		const ASomnusZombieCharacter* Zombie = Cast<ASomnusZombieCharacter>(CrowdMember.Get());
+		if (!Zombie) continue;
+
+		// Flat, for the same reason the shove is: height in it would press the player into or off
+		// the floor whenever the two stand on different steps.
+		const FVector ToZombie = FVector(Zombie->GetActorLocation() - OwnLocation) * FVector(1.f, 1.f, 0.f);
+		const double Distance = ToZombie.Size();
+
+		// Standing exactly on top of each other gives no line to resist along.
+		if (FMath::IsNearlyZero(Distance)) continue;
+
+		const FVector TowardZombie = ToZombie / Distance;
+		const double SpeedIntoZombie = FVector::DotProduct(Velocity, TowardZombie);
+
+		// Already moving away, or only past it; nothing to resist.
+		if (SpeedIntoZombie <= 0.0) continue;
+
+		// Negative while the zombie is inside the query's inflation but not yet touching, which
+		// starts the drag a little before contact - a brush costs something even when it is close.
+		const double Penetration = OwnRadius + Zombie->GetCapsuleComponent()->GetScaledCapsuleRadius() - Distance;
+
+		// Deep enough and no further in at all: without this a zombie that cannot give way is walked
+		// through, since the shove flips to the far side once the player passes its centre.
+		if (Penetration >= CrowdMaxPenetration)
+		{
+			Velocity -= TowardZombie * SpeedIntoZombie;
+			continue;
+		}
+
+		// A cap rather than a share taken off: taking a share every move would compound against the
+		// engine re-accelerating in between, settling on a crawl that depends on the frame rate. As a
+		// cap, the pair always moves at what the zombie's resistance leaves of this move's top speed,
+		// and the server carries the zombie along at exactly that.
+		const double CarrySpeed = GetMaxSpeed() * (1.f - Zombie->GetCrowdResistance());
+		if (SpeedIntoZombie > CarrySpeed)
+		{
+			Velocity -= TowardZombie * (SpeedIntoZombie - CarrySpeed);
+		}
+	}
 }
 
 void FSavedMove_Somnus::Clear()

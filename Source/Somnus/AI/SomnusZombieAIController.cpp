@@ -3,6 +3,10 @@
 
 #include "AI/SomnusZombieAIController.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
+#include "Core/SomnusGameplayTags.h"
+
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -139,6 +143,29 @@ void ASomnusZombieAIController::OnPossess(APawn* InPawn)
 		// so cannot overwrite anything - this only recovers a target that was already in sight.
 		RefreshTarget(FAIStimulus());
 	}
+
+	// The pawn's PossessedBy, run inside Super above, has already initialised its ability system.
+	if (UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(InPawn))
+	{
+		StaggeredTagHandle = ASC->RegisterGameplayTagEvent(SomnusTags::State_Staggered, EGameplayTagEventType::NewOrRemoved)
+			.AddUObject(this, &ASomnusZombieAIController::OnStaggeredTagChanged);
+	}
+}
+
+void ASomnusZombieAIController::OnUnPossess()
+{
+	if (UAbilitySystemComponent* ASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetPawn()))
+	{
+		ASC->RegisterGameplayTagEvent(SomnusTags::State_Staggered, EGameplayTagEventType::NewOrRemoved)
+			.Remove(StaggeredTagHandle);
+	}
+	StaggeredTagHandle.Reset();
+
+	Super::OnUnPossess();
+}
+
+void ASomnusZombieAIController::OnStaggeredTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
 }
 
 EBlackboardNotificationResult ASomnusZombieAIController::OnMoveStateChanged(

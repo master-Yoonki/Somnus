@@ -93,6 +93,10 @@ void ASomnusCharacter::Tick(float DeltaTime)
 	bIsAiming = ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
 
 	UpdateLocomotionState();
+	if (HasAuthority())
+	{
+		PushOverlappingZombies(DeltaTime);
+	}
 	UpdateAimStanceTurn(DeltaTime);
 	UpdateCamera(DeltaTime);
 
@@ -136,6 +140,7 @@ void ASomnusCharacter::PossessedBy(AController* NewController)
 		UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent();
 		ASC->InitAbilityActorInfo(PS, this);
 		GrantDefaults(ASC);
+		RefreshInAirTag();
 
 		if (IsLocallyControlled())
 		{
@@ -584,6 +589,7 @@ void ASomnusCharacter::OnRep_PlayerState()
 	if (ASomnusPlayerState* PS = GetPlayerState<ASomnusPlayerState>())
 	{
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
+		RefreshInAirTag();
 		if (IsLocallyControlled())
 		{
 			AddInputMappingContext();
@@ -823,4 +829,69 @@ void ASomnusCharacter::SomnusDumpContainers()
 	}
 
 	UE_LOG(LogSomnusInventory, Warning, TEXT("===== [%s] end ====="), *Machine);
+}
+
+void ASomnusCharacter::PushOverlappingZombies(float DeltaTime)
+{
+	if (!GetSomnusMovement()) return;
+	TArray<AActor*> OverlappingZombies;
+	GetSomnusMovement()->FindOverlappingZombies(OverlappingZombies);
+
+	for (AActor* OverlappingZombie : OverlappingZombies)
+	{
+		ACharacter* ZombieCharacter = Cast<ACharacter>(OverlappingZombie);
+		if (!ZombieCharacter)
+		{
+			continue;
+		}
+
+		const FVector Shove = ComputeZombieShove(ZombieCharacter, DeltaTime);
+		if (Shove.IsNearlyZero())
+		{
+			continue;
+		}
+
+		// Swept, so a zombie with a wall or another zombie behind it stays put - and then the
+		// movement component's penetration limit is what stops the player.
+		FHitResult Hit;
+		ZombieCharacter->GetCharacterMovement()->SafeMoveUpdatedComponent(Shove, ZombieCharacter->GetActorQuat(), true, Hit);
+	}
+}
+
+FVector ASomnusCharacter::ComputeZombieShove(const ACharacter* Zombie, float DeltaTime) const
+{
+	// Flat on purpose: a push with height in it would lift the zombie off the floor or drive it
+	// into it whenever the two stand on different steps.
+	const FVector ToZombie = FVector(Zombie->GetActorLocation() - GetActorLocation()) * FVector(1.f, 1.f, 0.f);
+	const double Distance = ToZombie.Size();
+
+	const double Penetration = GetCapsuleComponent()->GetScaledCapsuleRadius()
+		+ Zombie->GetCapsuleComponent()->GetScaledCapsuleRadius() - Distance;
+	if (Penetration <= 0.0)
+	{
+		return FVector::ZeroVector;
+	}
+
+	// Standing exactly on top of each other gives no line to push along; out ahead of the body
+	// is the side the player is walking into anyway.
+	const FVector TowardZombie = Distance > UE_KINDA_SMALL_NUMBER ? ToZombie / Distance : GetActorForwardVector().GetSafeNormal2D();
+
+	// Carried at the speed this body is heading into the zombie. The movement component has already
+	// capped that at what the zombie's resistance leaves, so the two move on together at one speed
+	// and the gap between them holds instead of closing into a wall.
+	const double SpeedIntoZombie = FVector::DotProduct(GetVelocity() * FVector(1.f, 1.f, 0.f), TowardZombie);
+	const double Carry = FMath::Max(SpeedIntoZombie, 0.0) * DeltaTime;
+
+	// Eased out by part of the overlap. Capped at the whole of it, so a long frame settles the zombie
+	// at the capsule's edge instead of flinging it past.
+	const double EaseOut = Penetration * FMath::Min(CrowdPushStrength * DeltaTime, 1.f);
+
+	// Anything past the penetration limit goes at once. The limit on the player's side only stops the
+	// player; a zombie chasing in is stopped by nothing else, and past the centre the line flips and
+	// the player would be pushed through it.
+	const double Excess = FMath::Max(Penetration - GetSomnusMovement()->GetCrowdMaxPenetration(), 0.0);
+
+	// Easing out and backing out both close the overlap, so the larger of the two is taken rather
+	// than their sum. Carrying is separate: it keeps up with the player rather than closing anything.
+	return TowardZombie * (Carry + FMath::Max(EaseOut, Excess));
 }
