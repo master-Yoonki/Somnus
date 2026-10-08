@@ -91,8 +91,12 @@ protected:
 	/** Which region a hit bone belongs to. See RegionRootBones. */
 	ESomnusHitRegion ResolveHitRegion(const USkeletalMeshComponent* Mesh, FName HitBone) const;
 
-	/** Whether the instigator stood inside the front arc of the struck body. */
-	bool IsHitFromFront(const AActor* StruckActor, const AActor* Instigator) const;
+	/** Whether the blow came in through the front arc of the struck body: the strike travels from
+	 *  the front toward the back, so it points against the body's facing. Judged by the direction
+	 *  of the force rather than where the attacker stood, so the authored reaction - recoiling
+	 *  backward - and the shove agree even for a sideways swing thrown from in front.
+	 *  StrikeDirection is flat and unit length, the same one the knockback pushes along. */
+	bool IsHitFromFront(const AActor* StruckActor, const FVector& StrikeDirection) const;
 
 	/** One of the region's reactions at random, or null when the region has none. */
 	UAnimMontage* PickMontage(ESomnusHitRegion Region) const;
