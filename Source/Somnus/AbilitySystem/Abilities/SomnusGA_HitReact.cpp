@@ -3,6 +3,8 @@
 
 #include "AbilitySystem/Abilities/SomnusGA_HitReact.h"
 
+#include "Abilities/Tasks/AbilityTask_ApplyRootMotionConstantForce.h"
+#include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "AbilitySystem/SomnusGameplayEffectContext.h"
 #include "Character/SomnusCharacterBase.h"
 #include "Character/SomnusHitReactComponent.h"
@@ -71,19 +73,61 @@ void USomnusGA_HitReact::ActivateAbility(const FGameplayAbilitySpecHandle Handle
 		static_cast<const FSomnusGameplayEffectContext*>(TriggerEventData->ContextHandle.Get());
 	const FVector HitImpulse = SomnusCtx->GetHitImpulse();
 	
-	// Debug
-	// The struck body is the one running this ability. The striking body is the context's effect
-	// causer, not its instigator: the instigator is whoever owns the attacker's ability system,
-	// which for a player is the PlayerState.
-	// ASomnusCharacterBase* SourceCharacter = Cast<ASomnusCharacterBase>(TriggerEventData->ContextHandle.GetEffectCauser());
-	// ASomnusCharacterBase* HitCharacter = Cast<ASomnusCharacterBase>(GetAvatarActorFromActorInfo());
-	//
-	// SourceCharacter->ApplyHitStop(0.5f, 0.05f);
-	// HitCharacter->ApplyHitStop(0.5f, 0.05f);
-	
 	HitComponent->HitReaction(HitBone, HitLocation, HitImpulse);
 	
-	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+	const float ImpulseSize = static_cast<float>(HitImpulse.Size());
+	const float StaggerDuration = EvaluateByImpulse(StaggerDurationByImpulse, ImpulseSize);
+	const float KnockbackStrength = EvaluateByImpulse(KnockbackStrengthByImpulse, ImpulseSize);
+
+	// A body whose curves are empty only flinches physically, and that needs nothing kept alive.
+	if (StaggerDuration <= 0.f && KnockbackStrength <= 0.f)
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+		return;
+	}
+
+	bool bKnockedBack = false;
+	if (KnockbackStrength > 0.f)
+	{
+		// Along the strike, flat - height in it would lift the body off the floor or drive it in.
+		// A swing tracked with no sideways speed, such as a straight chop down, gives no line, so the
+		// shove falls back to straight away from whoever struck.
+		FVector KnockbackDirection = HitImpulse.GetSafeNormal2D();
+		if (KnockbackDirection.IsNearlyZero())
+		{
+			const AActor* Attacker = TriggerEventData->ContextHandle.GetEffectCauser();
+			const AActor* Struck = GetAvatarActorFromActorInfo();
+			if (Attacker && Struck)
+			{
+				KnockbackDirection = (Struck->GetActorLocation() - Attacker->GetActorLocation()).GetSafeNormal2D();
+			}
+		}
+
+		// No line at all only costs the shove. The stagger still runs, so this path must not return.
+		if (!KnockbackDirection.IsNearlyZero())
+		{
+			UAbilityTask_ApplyRootMotionConstantForce* Knockback =
+				UAbilityTask_ApplyRootMotionConstantForce::ApplyRootMotionConstantForce(
+					this, NAME_None,
+					KnockbackDirection, KnockbackStrength, KnockbackDuration,
+					/*bIsAdditive*/ false,
+					/*StrengthOverTime*/ nullptr,
+					ERootMotionFinishVelocityMode::SetVelocity,
+					/*SetVelocityOnFinish*/ FVector::ZeroVector,
+					/*ClampVelocityOnFinish*/ 0.f,
+					/*bEnableGravity*/ true);
+			Knockback->ReadyForActivation();
+			bKnockedBack = true;
+		}
+	}
+
+	// One timer decides when this ends, long enough to cover both the stagger and the shove. Ending
+	// from each of them separately would let whichever finished first cut the other short, since
+	// ending the ability ends every task it is still running.
+	const float ReactionDuration = FMath::Max(StaggerDuration, bKnockedBack ? KnockbackDuration : 0.f);
+	UAbilityTask_WaitDelay* WaitReaction = UAbilityTask_WaitDelay::WaitDelay(this, ReactionDuration);
+	WaitReaction->OnFinish.AddDynamic(this, &USomnusGA_HitReact::OnReactionFinished);
+	WaitReaction->ReadyForActivation();
 }
 
 ESomnusHitRegion USomnusGA_HitReact::ResolveHitRegion(const USkeletalMeshComponent* Mesh, FName HitBone) const
@@ -103,9 +147,15 @@ UAnimMontage* USomnusGA_HitReact::PickMontage(ESomnusHitRegion Region) const
 
 float USomnusGA_HitReact::EvaluateByImpulse(const FRuntimeFloatCurve& Curve, float ImpulseSize)
 {
-	return 0.f;
+	// Zero for an empty curve is the answer wanted here, not a fallback: no curve means this body
+	// does not stagger or get shoved, which is how a body type opts out.
+	const FRichCurve* RichCurve = Curve.GetRichCurveConst();
+	if (!RichCurve || RichCurve->GetNumKeys() == 0) return 0.f;
+
+	return RichCurve->Eval(ImpulseSize);
 }
 
 void USomnusGA_HitReact::OnReactionFinished()
 {
+	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }

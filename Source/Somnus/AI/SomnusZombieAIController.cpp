@@ -166,6 +166,21 @@ void ASomnusZombieAIController::OnUnPossess()
 
 void ASomnusZombieAIController::OnStaggeredTagChanged(const FGameplayTag Tag, int32 NewCount)
 {
+	if (!GetBrainComponent()) return;
+	if (NewCount > 0)
+	{
+		PauseMove(GetCurrentMoveRequestID());
+		GetBrainComponent()->PauseLogic(TEXT("Staggered"));
+	}
+	else if (NewCount == 0)
+	{
+		GetBrainComponent()->ResumeLogic(TEXT("Staggered"));
+		ResumeMove(GetCurrentMoveRequestID());
+	}
+	else
+	{
+		return;
+	}
 }
 
 EBlackboardNotificationResult ASomnusZombieAIController::OnMoveStateChanged(
