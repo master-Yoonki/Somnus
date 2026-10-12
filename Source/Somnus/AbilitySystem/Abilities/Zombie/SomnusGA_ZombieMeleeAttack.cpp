@@ -30,8 +30,7 @@ UAnimMontage* USomnusGA_ZombieMeleeAttack::GetMontageToPlay(const FGameplayEvent
 		{
 			if (UBlackboardComponent* BB = AIC->GetBlackboardComponent())
 			{
-				// IMPORTANT: Change "TargetActor" to whatever your Blackboard Key name actually is!
-				TargetActor = Cast<AActor>(BB->GetValueAsObject(FName("TargetActor")));
+				TargetActor = Cast<AActor>(BB->GetValueAsObject(TargetActorKeyName));
 			}
 		}
 	}

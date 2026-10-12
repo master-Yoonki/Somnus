@@ -29,10 +29,11 @@ public:
 	virtual void NotifyTick(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, float FrameDeltaTime, const FAnimNotifyEventReference& EventReference) override;
 	virtual void NotifyEnd(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
 
-protected:
+	/** Which sockets sweep, and how wide. Public so editor scripts can lay these windows out across
+	 *  montages; scripting cannot write a protected property. */
 	UPROPERTY(EditAnywhere, Category = "Trace")
 	TArray<FSomnusZombieTraceConfig> TraceConfigs;
-	
+
 private:
 	// Track actors already hit during this swing to prevent duplicate hits
 	UPROPERTY()

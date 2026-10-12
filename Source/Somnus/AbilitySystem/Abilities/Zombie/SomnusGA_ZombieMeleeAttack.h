@@ -48,6 +48,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Animation")
 	TArray<FSomnusZombieAttackMontage> AttackMontages;
 
+	/** Blackboard key holding who to attack, read when the tree activates this with no event payload. */
+	UPROPERTY(EditDefaultsOnly, Category = "AI")
+	FName TargetActorKeyName = FName("TargetActor");
+
 	// Resolves the AI target, then selects a directional montage. Called by the base ActivateAbility.
 	virtual UAnimMontage* GetMontageToPlay(const FGameplayEventData* TriggerEventData) override;
 

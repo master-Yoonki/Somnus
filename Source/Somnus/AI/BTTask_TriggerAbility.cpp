@@ -3,67 +3,122 @@
 
 #include "AI/BTTask_TriggerAbility.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "AIController.h"
-
-#include "Character/Zombie/SomnusZombieCharacter.h"
+#include "BehaviorTree/BehaviorTreeComponent.h"
 
 UBTTask_TriggerAbility::UBTTask_TriggerAbility()
 {
-	// Required to prevent memory sharing between multiple zombie instances so we can safely cache the BTComponent 
+	NodeName = TEXT("Trigger Ability");
+
+	// The binding and the tree it reports to are kept on the node, so each tree needs its own copy.
 	bCreateNodeInstance = true;
+
+	// OnTaskFinished is only called for nodes that ask for it, and it is where the binding is cleared.
+	bNotifyTaskFinished = true;
 }
 
 EBTNodeResult::Type UBTTask_TriggerAbility::ExecuteTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
 {
-	AAIController* AIController = OwnerComp.GetAIOwner();
-	if (!AIController) return EBTNodeResult::Failed;
-	ACharacter* Character = AIController->GetCharacter();
-	if (!Character) return EBTNodeResult::Failed;
-	ASomnusZombieCharacter* ZombieCharacter = Cast<ASomnusZombieCharacter>(Character);
-	if (!ZombieCharacter) return EBTNodeResult::Failed;
-	UAbilitySystemComponent* ASC = ZombieCharacter->GetAbilitySystemComponent();
-	if (!ASC) return EBTNodeResult::Failed;
-	
-	FGameplayTagContainer SingleTag;
-	SingleTag.AddTag(AbilityTagToActivate);
-	if (ASC->TryActivateAbilitiesByTag(SingleTag))
+	const AAIController* AIController = OwnerComp.GetAIOwner();
+	UAbilitySystemComponent* ASC = AIController
+		? UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(AIController->GetPawn())
+		: nullptr;
+	if (!ASC || !AbilityTagToActivate.IsValid())
 	{
-		ASC->OnAbilityEnded.AddUObject(this, &UBTTask_TriggerAbility::OnAbilityEnded);
-		CachedASC = ASC;
-		CachedBTComponent = &OwnerComp;
-		return EBTNodeResult::InProgress;
+		return EBTNodeResult::Failed;
 	}
 
-	return EBTNodeResult::Failed;
-}
+	const FGameplayTagContainer AbilityTags(AbilityTagToActivate);
 
-EBTNodeResult::Type UBTTask_TriggerAbility::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
-{
-	check(CachedASC);
-	check(CachedBTComponent);
-	
-	FGameplayTagContainer SingleTag;
-	SingleTag.AddTag(AbilityTagToActivate);
-	CachedASC->OnAbilityEnded.RemoveAll(this);
-	CachedASC->CancelAbilities(&SingleTag);
-	CachedASC = nullptr;
-	CachedBTComponent = nullptr;
-	return EBTNodeResult::Aborted;
+	if (!bWaitForAbilityEnd)
+	{
+		return ASC->TryActivateAbilitiesByTag(AbilityTags) ? EBTNodeResult::Succeeded : EBTNodeResult::Failed;
+	}
+
+	// Listen before activating. An ability can end inside its own activation - failing a check, or
+	// finishing at once - and a listener bound afterwards would wait for an end that already came.
+	ListenedASC = ASC;
+	WaitingTree = &OwnerComp;
+	AbilityEndedHandle = ASC->OnAbilityEnded.AddUObject(this, &UBTTask_TriggerAbility::OnAbilityEnded);
+
+	bActivating = true;
+	bEndedDuringActivation = false;
+	const bool bActivated = ASC->TryActivateAbilitiesByTag(AbilityTags);
+	bActivating = false;
+
+	if (!bActivated)
+	{
+		return EBTNodeResult::Failed;
+	}
+	if (bEndedDuringActivation)
+	{
+		return bEndedCancelled ? EBTNodeResult::Failed : EBTNodeResult::Succeeded;
+	}
+	return EBTNodeResult::InProgress;
 }
 
 void UBTTask_TriggerAbility::OnAbilityEnded(const FAbilityEndedData& AbilityEndedData)
 {
-	check(CachedASC);
-	check(CachedBTComponent);
-	
-	if (AbilityEndedData.AbilityThatEnded->GetAssetTags().HasTag(AbilityTagToActivate))
+	// Every ability on the component reports here; only the one this task started counts.
+	if (!AbilityEndedData.AbilityThatEnded || !AbilityEndedData.AbilityThatEnded->GetAssetTags().HasTag(AbilityTagToActivate))
 	{
-		CachedASC->OnAbilityEnded.RemoveAll(this);
-		EBTNodeResult::Type NodeResult = AbilityEndedData.bWasCancelled ? EBTNodeResult::Failed : EBTNodeResult::Succeeded;
-		FinishLatentTask(*CachedBTComponent, NodeResult);
-		
-		CachedASC = nullptr;
-		CachedBTComponent = nullptr;
+		return;
 	}
+
+	if (bActivating)
+	{
+		bEndedDuringActivation = true;
+		bEndedCancelled = AbilityEndedData.bWasCancelled;
+		return;
+	}
+
+	UBehaviorTreeComponent* Tree = WaitingTree.Get();
+	StopListening();
+	if (Tree)
+	{
+		FinishLatentTask(*Tree, AbilityEndedData.bWasCancelled ? EBTNodeResult::Failed : EBTNodeResult::Succeeded);
+	}
+}
+
+EBTNodeResult::Type UBTTask_TriggerAbility::AbortTask(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory)
+{
+	// Stop listening first: cancelling below ends the ability, and its end must not come back in as
+	// a finish for a task that is already being aborted.
+	UAbilitySystemComponent* ASC = ListenedASC.Get();
+	StopListening();
+
+	if (ASC)
+	{
+		const FGameplayTagContainer AbilityTags(AbilityTagToActivate);
+		ASC->CancelAbilities(&AbilityTags);
+	}
+	return EBTNodeResult::Aborted;
+}
+
+void UBTTask_TriggerAbility::OnTaskFinished(UBehaviorTreeComponent& OwnerComp, uint8* NodeMemory, EBTNodeResult::Type TaskResult)
+{
+	// Every way out lands here - succeeded, failed, aborted, or the activation never starting - so
+	// this is where the binding is guaranteed to go.
+	StopListening();
+	Super::OnTaskFinished(OwnerComp, NodeMemory, TaskResult);
+}
+
+void UBTTask_TriggerAbility::StopListening()
+{
+	if (UAbilitySystemComponent* ASC = ListenedASC.Get())
+	{
+		ASC->OnAbilityEnded.Remove(AbilityEndedHandle);
+	}
+	AbilityEndedHandle.Reset();
+	ListenedASC.Reset();
+	WaitingTree.Reset();
+}
+
+FString UBTTask_TriggerAbility::GetStaticDescription() const
+{
+	return FString::Printf(TEXT("Trigger %s%s"),
+		*AbilityTagToActivate.ToString(),
+		bWaitForAbilityEnd ? TEXT(", wait for end") : TEXT(""));
 }
