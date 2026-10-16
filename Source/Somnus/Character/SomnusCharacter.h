@@ -113,6 +113,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interact", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class USomnusInteractorComponent> InteractorComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class USomnusAttackSlotComponent> AttackSlotComponent;
+
 
 public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "UI")

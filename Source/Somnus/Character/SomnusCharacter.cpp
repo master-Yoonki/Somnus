@@ -36,6 +36,7 @@
 #include "Equipment/SomnusMeleeWeapon.h"
 #include "PhysicsControlComponent.h"
 #include "Core/SomnusInteractorComponent.h"
+#include "AI/SomnusAttackSlotComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 
 ASomnusCharacter::ASomnusCharacter(const FObjectInitializer& ObjectInitializer)
@@ -79,6 +80,9 @@ ASomnusCharacter::ASomnusCharacter(const FObjectInitializer& ObjectInitializer)
 	
 	InteractorComponent = CreateDefaultSubobject<USomnusInteractorComponent>(TEXT("InteractorComponent"));
 
+	AttackSlotComponent = CreateDefaultSubobject<USomnusAttackSlotComponent>(TEXT("AttackSlotComponent"));
+	AttackSlotComponent->SetupAttachment(GetRootComponent());
+
 	Gait = ESomnusGait::Walk;
 }
 
@@ -99,6 +103,11 @@ void ASomnusCharacter::Tick(float DeltaTime)
 	}
 	UpdateAimStanceTurn(DeltaTime);
 	UpdateCamera(DeltaTime);
+
+	if (AttackSlotComponent)
+	{
+		AttackSlotComponent->DebugDraw();
+	}
 
 	// // Toggle rotation mode based on aiming state
 	// if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
