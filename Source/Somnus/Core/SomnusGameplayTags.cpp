@@ -68,6 +68,7 @@ namespace SomnusTags
 	UE_DEFINE_GAMEPLAY_TAG(State_MovementCancellable, "State.MovementCancellable");
 	UE_DEFINE_GAMEPLAY_TAG(State_Dead, "State.Dead");
 	UE_DEFINE_GAMEPLAY_TAG(State_Staggered, "State.Staggered");
+	UE_DEFINE_GAMEPLAY_TAG(State_Attacking, "State.Attacking");
 
 	// Effect policy tags
 	UE_DEFINE_GAMEPLAY_TAG(Effect_RemoveOnDeath, "Effect.RemoveOnDeath");

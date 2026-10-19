@@ -65,6 +65,9 @@ protected:
 	/** Re-fits every slot to the navmesh around where the owner stands now. */
 	void UpdateSlots();
 
+	/** Whether this zombie is partway through a swing, which keeps it on the slot it holds. */
+	static bool IsAttacking(const AActor* Zombie);
+
 	/**
 	 * Where a slot at this offset lands on the navmesh, pulled in short of anything in the way.
 	 * False when there is no such place, or it ends up too close for a zombie to fit.
@@ -73,7 +76,7 @@ protected:
 		const FVector& Offset, FVector& OutLocation) const;
 
 	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category = "AttackSlot")
-	float Range = 100.f;
+	float Range = 120.f;
 	
 	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category = "AttackSlot")
 	float MinSlotRange = 70.f;

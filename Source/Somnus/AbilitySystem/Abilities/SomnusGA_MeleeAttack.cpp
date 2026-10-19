@@ -5,8 +5,10 @@
 #include "AbilitySystem/Tasks/SomnusAT_PlayMontageAndWaitForEvent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
+#include "MotionWarpingComponent.h"
 #include "AbilitySystem/SomnusGameplayEffectContext.h"
 #include "AbilitySystem/Tasks/SomnusAT_TrackStrikeVelocity.h"
+#include "Character/SomnusCharacterBase.h"
 #include "Core/SomnusGameplayTags.h"
 
 USomnusGA_MeleeAttack::USomnusGA_MeleeAttack()
@@ -34,20 +36,45 @@ void USomnusGA_MeleeAttack::ActivateAbility(const FGameplayAbilitySpecHandle Han
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
+	
+	// Warp target setup
+	const AActor* WarpTarget = nullptr;
+	float ContactDistance = 0.f;
+	
+	if (const ASomnusCharacterBase* SourceCharacter = Cast<ASomnusCharacterBase>(ActorInfo->AvatarActor.Get()))
+	{
+		if (UMotionWarpingComponent* MotionWarping = SourceCharacter->GetMotionWarping())
+		{
+			if (GetWarpTarget(WarpTarget, ContactDistance))
+			{
+				// Has valid warp target
 
+				FVector ToWarpTarget = (WarpTarget->GetActorLocation() - SourceCharacter->GetActorLocation()).GetSafeNormal2D();
+				
+				MotionWarping->AddOrUpdateWarpTargetFromLocationAndRotation(
+					WarpTargetName, 
+					WarpTarget->GetActorLocation() /*- ToWarpTarget * ContactDistance*/, ToWarpTarget.Rotation());
+			}
+			else
+			{
+				MotionWarping->RemoveWarpTarget(WarpTargetName);
+			}
+		}
+	}
+	
 	// Combined task: plays montage AND listens for melee hit events simultaneously
 	FGameplayTagContainer EventTagFilter;
 	EventTagFilter.AddTag(SomnusTags::Event_Melee_Hit);
 
 	USomnusAT_PlayMontageAndWaitForEvent* PlayMontageAndWaitForEventTask = USomnusAT_PlayMontageAndWaitForEvent::PlayMontageAndWaitForEvent(
-		this, NAME_None, MontageToPlay, EventTagFilter, MontagePlayRate);
+		this, NAME_None, MontageToPlay, EventTagFilter,
+		MontagePlayRate * FMath::FRandRange(1.f - MontagePlayRateVariance, 1.f + MontagePlayRateVariance));
 
 	PlayMontageAndWaitForEventTask->OnCompleted.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCompleted);
 	PlayMontageAndWaitForEventTask->OnBlendOut.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCompleted);
 	PlayMontageAndWaitForEventTask->OnInterrupted.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCancelled);
 	PlayMontageAndWaitForEventTask->OnCancelled.AddDynamic(this, &USomnusGA_MeleeAttack::OnMontageCancelled);
 	PlayMontageAndWaitForEventTask->EventReceived.AddDynamic(this, &USomnusGA_MeleeAttack::OnMeleeHit);
-	
 	PlayMontageAndWaitForEventTask->ReadyForActivation();
 	
 	if (ISomnusStrikeSource* StrikeSource = Cast<ISomnusStrikeSource>(GetAvatarActorFromActorInfo()))

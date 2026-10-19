@@ -102,6 +102,7 @@ namespace SomnusTags
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_MovementCancellable);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Dead);
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Staggered);
+	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Attacking);
 
 	// Effect policy tags — used to batch-remove effects on death
 	SOMNUS_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Effect_RemoveOnDeath);

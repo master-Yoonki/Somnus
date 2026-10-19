@@ -10,6 +10,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Core/SomnusGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "MotionWarpingComponent.h"
 #include "Net/UnrealNetwork.h"
 
 ASomnusCharacterBase::ASomnusCharacterBase(const FObjectInitializer& ObjectInitializer)
@@ -19,6 +20,7 @@ ASomnusCharacterBase::ASomnusCharacterBase(const FObjectInitializer& ObjectIniti
 	// overrides on a component against the component's name, and a rename would drop them quietly.
 	HitReact = CreateDefaultSubobject<USomnusHitReactComponent>(TEXT("HitReact"));
 	PhysicsControl = CreateDefaultSubobject<UPhysicsControlComponent>(TEXT("PhysicsControl"));
+	MotionWarping = CreateDefaultSubobject<UMotionWarpingComponent>(TEXT("MotionWarping"));
 
 	// The capsule owns where the body is. Simulated bodies that also wrote it back would fight the
 	// capsule for the transform every time a hit reaction woke them.

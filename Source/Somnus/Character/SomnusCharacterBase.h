@@ -9,6 +9,7 @@
 
 class UGameplayAbility;
 class UGameplayEffect;
+class UMotionWarpingComponent;
 class UPhysicsControlComponent;
 class USomnusHitReactComponent;
 
@@ -54,6 +55,8 @@ public:
 	 *  while held extends the hold rather than stacking. The capsule keeps moving; only the pose
 	 *  freezes, which is all a hit stop is allowed to touch when world time is shared. */
 	void ApplyHitStop(float Duration, float RateScale);
+
+	UMotionWarpingComponent* GetMotionWarping() const { return MotionWarping; }
 
 	/** Keeps State.InAir in step with the movement mode. Called on every machine by the movement
 	 *  component - the server and the owner from their own simulation, the others when the
@@ -101,6 +104,11 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HitReact", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UPhysicsControlComponent> PhysicsControl;
+
+	/** Bends an attack's root motion onto a target set just before the montage plays, so a strike
+	 *  ends where it connects rather than where the clip was authored to. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UMotionWarpingComponent> MotionWarping;
 
 	/** How hard the killing blow shoves the ragdoll. */
 	UPROPERTY(EditDefaultsOnly, Category = "GAS", meta = (ClampMin = "0"))

@@ -5,6 +5,10 @@
 #include "DrawDebugHelpers.h"
 #include "Net/UnrealNetwork.h"
 #include "NavigationSystem.h"
+#include "Character/SomnusCharacterBase.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystemInterface.h"
+#include "Core/SomnusGameplayTags.h"
 
 USomnusAttackSlotComponent::USomnusAttackSlotComponent()
 {
@@ -71,6 +75,14 @@ void USomnusAttackSlotComponent::UpdateSlots()
 
 	for (FAttackSlot& Slot : ActiveSlots)
 	{
+		AActor* AssignedActor = Slot.AssignedActor.Get();
+		if (ASomnusCharacterBase* AssignedCharacter = Cast<ASomnusCharacterBase>(AssignedActor))
+		{
+			if (AssignedCharacter->IsDead())
+			{
+				Slot.AssignedActor.Reset();
+			}
+		}
 		Slot.bIsValid = ResolveSlotLocation(*NavSys, PlayerNav.Location, Slot.LocationOffset, Slot.ProjectedLocation);
 	}
 }
@@ -141,6 +153,13 @@ int32 USomnusAttackSlotComponent::RequestSlot(AActor* Zombie)
 
 	if (HeldIndex != INDEX_NONE)
 	{
+		// Mid-swing the slot is locked: moving it now would drag the body off the strike it is
+		// already committed to.
+		if (IsAttacking(Zombie))
+		{
+			return HeldIndex;
+		}
+
 		// Only move over for a slot clearly nearer than the one held. The margin has to come off a
 		// real distance, so this is where the square roots are taken.
 		const float HeldDist = FVector::Dist2D(ZombieLocation, ActiveSlots[HeldIndex].ProjectedLocation);
@@ -156,6 +175,13 @@ int32 USomnusAttackSlotComponent::RequestSlot(AActor* Zombie)
 		ActiveSlots[NearestFreeIndex].AssignedActor = Zombie;
 	}
 	return NearestFreeIndex;
+}
+
+bool USomnusAttackSlotComponent::IsAttacking(const AActor* Zombie)
+{
+	const IAbilitySystemInterface* AbilityOwner = Cast<IAbilitySystemInterface>(Zombie);
+	const UAbilitySystemComponent* ASC = AbilityOwner ? AbilityOwner->GetAbilitySystemComponent() : nullptr;
+	return ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Attacking);
 }
 
 int32 USomnusAttackSlotComponent::FindSlotOf(const AActor* Zombie) const
