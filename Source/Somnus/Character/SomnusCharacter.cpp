@@ -32,12 +32,15 @@
 #include "Core/SomnusCollisionChannels.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Character/SomnusHitReactComponent.h"
+#include "Character/SomnusCharacterMovementComponent.h"
 #include "Equipment/SomnusMeleeWeapon.h"
 #include "PhysicsControlComponent.h"
 #include "Core/SomnusInteractorComponent.h"
+#include "AI/SomnusAttackSlotComponent.h"
 #include "Kismet/KismetMathLibrary.h"
 
-ASomnusCharacter::ASomnusCharacter()
+ASomnusCharacter::ASomnusCharacter(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<USomnusCharacterMovementComponent>(CharacterMovementComponentName))
 {
 	// Use our custom input component for Lyra-style input binding
 	OverrideInputComponentClass = USomnusInputComponent::StaticClass();
@@ -55,8 +58,14 @@ ASomnusCharacter::ASomnusCharacter()
 	// Create a camera boom (pulls in towards the player if there is a collision)
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 400.0f; // The camera follows at this distance behind the character
 	CameraBoom->bUsePawnControlRotation = true; // Rotate the arm based on the controller
+	// Arm length, offset and field of view are not set here: they belong to the framing table, and
+	// a constructor value would only be the one the camera blends away from on the first frame.
+
+	ExploreCamera   = { 320.f, FVector(0.f,  0.f,  0.f), 88.f, 0.35f };
+	StrafeCamera    = { 200.f, FVector(0.f, 25.f, 45.f), 80.f, 0.25f };
+	MeleeAimCamera  = { 180.f, FVector(0.f, 40.f, 50.f), 75.f, 0.15f };
+	GunAimCamera    = { 160.f, FVector(0.f, 55.f, 55.f), 72.f, 0.20f };
 
 	// Create a follow camera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
@@ -71,13 +80,10 @@ ASomnusCharacter::ASomnusCharacter()
 	
 	InteractorComponent = CreateDefaultSubobject<USomnusInteractorComponent>(TEXT("InteractorComponent"));
 
-	HitReact = CreateDefaultSubobject<USomnusHitReactComponent>(TEXT("HitReact"));
-
-	PhysicsControl = CreateDefaultSubobject<UPhysicsControlComponent>(TEXT("PhysicsControl"));
+	AttackSlotComponent = CreateDefaultSubobject<USomnusAttackSlotComponent>(TEXT("AttackSlotComponent"));
+	AttackSlotComponent->SetupAttachment(GetRootComponent());
 
 	Gait = ESomnusGait::Walk;
-	
-	GetMesh()->PhysicsTransformUpdateMode = EPhysicsTransformUpdateMode::ComponentTransformIsKinematic;
 }
 
 void ASomnusCharacter::Tick(float DeltaTime)
@@ -85,7 +91,23 @@ void ASomnusCharacter::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 	
 	LastUpdateVelocity = GetCharacterMovement()->GetLastUpdateVelocity();
+
+	// The ability system lives on the player state, so it is missing until one is assigned.
+	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
+	bIsAiming = ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
+
+	UpdateLocomotionState();
+	if (HasAuthority())
+	{
+		PushOverlappingZombies(DeltaTime);
+	}
 	UpdateAimStanceTurn(DeltaTime);
+	UpdateCamera(DeltaTime);
+
+	if (AttackSlotComponent)
+	{
+		AttackSlotComponent->DebugDraw();
+	}
 
 	// // Toggle rotation mode based on aiming state
 	// if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
@@ -126,35 +148,8 @@ void ASomnusCharacter::PossessedBy(AController* NewController)
 	{
 		UAbilitySystemComponent* ASC = PS->GetAbilitySystemComponent();
 		ASC->InitAbilityActorInfo(PS, this);
-
-		// Apply default GEs (stamina regen, passive buffs, etc.) — guarded against repossession
-		if (!bDefaultEffectsApplied)
-		{
-			for (const TSubclassOf<UGameplayEffect>& GEClass : DefaultGameplayEffects)
-			{
-				if (!GEClass) continue;
-				FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
-				ContextHandle.AddSourceObject(this);
-				FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(GEClass, 1.0f, ContextHandle);
-				if (SpecHandle.IsValid())
-				{
-					ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
-				}
-			}
-			bDefaultEffectsApplied = true;
-		}
-
-		// Grant innate abilities (e.g., Jump) — guarded against repossession
-		if (!bDefaultAbilitiesGiven)
-		{
-			for (const TSubclassOf<UGameplayAbility>& AbilityClass : DefaultAbilities)
-			{
-				if (!AbilityClass) continue;
-				FGameplayAbilitySpec Spec(AbilityClass, 1, INDEX_NONE, this);
-				ASC->GiveAbility(Spec);
-			}
-			bDefaultAbilitiesGiven = true;
-		}
+		GrantDefaults(ASC);
+		RefreshInAirTag();
 
 		if (IsLocallyControlled())
 		{
@@ -168,7 +163,11 @@ void ASomnusCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ASomnusCharacter, EquippedWeapon);
-	DOREPLIFETIME(ASomnusCharacter, bDead);
+
+	// The owner works both out from its own input a round trip before the server's copy could
+	// arrive, so only the machines that merely watch are sent them.
+	DOREPLIFETIME_CONDITION(ASomnusCharacter, Gait, COND_SimulatedOnly);
+	DOREPLIFETIME_CONDITION(ASomnusCharacter, bIsStrafing, COND_SimulatedOnly);
 }
 
 TArray<FSomnusStrikeSourceInfo> ASomnusCharacter::GetStrikeSources() const
@@ -185,6 +184,58 @@ void ASomnusCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	BaseMeshRelativeRotation = GetMesh()->GetRelativeRotation().Quaternion();
+
+	// Start in the framing rather than blending into it from whatever the components were built with.
+	const FSomnusCameraMode& StartingFraming = GetCameraMode(CameraFraming);
+	ApplyCameraMode(StartingFraming, StartingFraming, 1.f);
+	CameraBlendStart = StartingFraming;
+}
+
+const FSomnusCameraMode& ASomnusCharacter::GetCameraMode(ESomnusCameraFraming Framing) const
+{
+	switch (Framing)
+	{
+	case ESomnusCameraFraming::Strafe:	 return StrafeCamera;
+	case ESomnusCameraFraming::MeleeAim: return MeleeAimCamera;
+	case ESomnusCameraFraming::GunAim:	 return GunAimCamera;
+	default:							 return ExploreCamera;
+	}
+}
+
+void ASomnusCharacter::UpdateCamera(float DeltaTime)
+{
+	// Nobody looks through a proxy's camera, and moving one would only cost the frame time.
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	const FSomnusCameraMode& Target = GetCameraMode(CameraFraming);
+
+	if (CameraFraming != CameraFraming_LastFrame)
+	{
+		CameraBlendStart.TargetArmLength = CameraBoom->TargetArmLength;
+		CameraBlendStart.SocketOffset = CameraBoom->SocketOffset;
+		CameraBlendStart.FieldOfView = FollowCamera->FieldOfView;
+		CameraBlendElapsed = 0.f;
+		CameraFraming_LastFrame = CameraFraming;
+	}
+
+	CameraBlendElapsed += DeltaTime;
+	const float Alpha = Target.BlendTime > 0.f
+		? FMath::Clamp(CameraBlendElapsed / Target.BlendTime, 0.f, 1.f)
+		: 1.f;
+
+	// Eased rather than linear: a camera that starts and stops moving at full speed reads as a cut
+	// with extra steps, however long the blend is given.
+	ApplyCameraMode(CameraBlendStart, Target, FMath::SmoothStep(0.f, 1.f, Alpha));
+}
+
+void ASomnusCharacter::ApplyCameraMode(const FSomnusCameraMode& From, const FSomnusCameraMode& To, float Alpha)
+{
+	CameraBoom->TargetArmLength = FMath::Lerp(From.TargetArmLength, To.TargetArmLength, Alpha);
+	CameraBoom->SocketOffset = FMath::Lerp(From.SocketOffset, To.SocketOffset, Alpha);
+	FollowCamera->SetFieldOfView(FMath::Lerp(From.FieldOfView, To.FieldOfView, Alpha));
 }
 
 void ASomnusCharacter::UpdateAimStanceTurn(float DeltaTime)
@@ -197,9 +248,7 @@ void ASomnusCharacter::UpdateAimStanceTurn(float DeltaTime)
 
 	// Runs on every machine, the server included - melee traces sweep the weapon on this mesh, so
 	// the server has to turn it the same way the players see it turned.
-	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
-	const bool bAiming = ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Aiming);
-	const float TargetYaw = bAiming && EquippedWeapon ? EquippedWeapon->GetAimStanceYaw() : 0.f;
+	const float TargetYaw = bIsAiming && EquippedWeapon ? EquippedWeapon->GetAimStanceYaw() : 0.f;
 
 	const float PreviousYaw = AimStanceYaw;
 	FMath::ExponentialSmoothingApprox(AimStanceYaw, TargetYaw, DeltaTime, AimStanceTurnSmoothingTime);
@@ -241,7 +290,7 @@ void ASomnusCharacter::SetHighlighted_Implementation(bool bHighlighted)
 		return;
 	}
 
-	BodyMesh->SetCustomDepthStencilValue(bHighlighted ? SomnusStencil::Interactable : SomnusStencil::None);
+	BodyMesh->SetCustomDepthStencilValue(USomnusInteractionLibrary::HighlightStencil(bHighlighted));
 	BodyMesh->SetRenderCustomDepth(bHighlighted);
 }
 
@@ -287,19 +336,6 @@ void ASomnusCharacter::NotifyCarriedWeaponRetiring(ASomnusWeapon* Weapon)
 	UpdateWeaponAnimLayers(nullptr);
 }
 
-FVector2D ASomnusCharacter::ClampInputScale(FVector2D InputScale) const
-{
-	FVector2D NormalizedInput = UKismetMathLibrary::Normal2D(InputScale);
-	if (InputScale.Length() > RunScaleThreshold)
-	{
-		return NormalizedInput * RunScale;
-	}
-	else
-	{
-		return NormalizedInput * WalkScale;
-	}
-}
-
 void ASomnusCharacter::OnRep_EquippedWeapon(ASomnusWeapon* OldWeapon)
 {
 	// Hide old weapon, show new. IsValid rather than a null test: the value that arrived here can
@@ -341,6 +377,29 @@ void ASomnusCharacter::UpdateWeaponAnimLayers(const ASomnusWeapon* NewWeapon)
 		SkelMesh->LinkAnimClassLayers(NewLayerClass);
 	}
 	LinkedItemLayerClass = NewLayerClass;
+}
+
+USomnusCharacterMovementComponent* ASomnusCharacter::GetSomnusMovement() const
+{
+	return CastChecked<USomnusCharacterMovementComponent>(GetCharacterMovement());
+}
+
+void ASomnusCharacter::UpdateLocomotionState()
+{
+	USomnusCharacterMovementComponent* Movement = GetSomnusMovement();
+
+	// A watching machine has neither the wishes nor the moves, so it takes both from the server.
+	// It runs no moves either, so nothing else sets its turn flags - and its animation reads them
+	// to predict where the body will face. Set every tick rather than on arrival: the starting
+	// value is never sent, and the flags start as whatever the blueprint left them.
+	if (GetLocalRole() == ROLE_SimulatedProxy)
+	{
+		Movement->ApplyRotationMode(bIsStrafing);
+		return;
+	}
+
+	Gait = Movement->ResolveDisplayedGait(Gait);
+	bIsStrafing = Movement->WantsToStrafe();
 }
 
 ESomnusMovementMode ASomnusCharacter::GetMovementMode() const
@@ -448,8 +507,10 @@ void ASomnusCharacter::Move(const FInputActionValue& Value)
 		}
 	}
 
-	// Input is a Vector2D
-	FVector2D MovementVector = ClampInputScale(Value.Get<FVector2D>());
+	// Passed through as it comes. Gait is the movement component's to decide, from the walk and
+	// sprint wishes, so the input only says which way and how hard; the component clamps a
+	// keyboard diagonal back to unit length itself (ScaleInputAcceleration).
+	const FVector2D MovementVector = Value.Get<FVector2D>();
 	
 	if (Controller != nullptr)
 	{
@@ -537,6 +598,7 @@ void ASomnusCharacter::OnRep_PlayerState()
 	if (ASomnusPlayerState* PS = GetPlayerState<ASomnusPlayerState>())
 	{
 		PS->GetAbilitySystemComponent()->InitAbilityActorInfo(PS, this);
+		RefreshInAirTag();
 		if (IsLocallyControlled())
 		{
 			AddInputMappingContext();
@@ -556,15 +618,8 @@ void ASomnusCharacter::AddInputMappingContext() const
 	}
 }
 
-void ASomnusCharacter::Die(const FVector& HitDirection)
+void ASomnusCharacter::HandleServerDeath()
 {
-	// Death is a server decision, and bDead is replicated - a client must never set it locally.
-	if (!HasAuthority() || IsDead()) return;
-
-	// Set before anything that could bail out. Whether this body is a corpse must not depend on
-	// whether there happened to be an ability system left to clean up.
-	bDead = true;
-
 	// A looter who dies stops looting. Being looted is unaffected - that session belongs to
 	// whoever opened this body, and their component keeps re-checking it from their side.
 	if (LootComponent)
@@ -581,88 +636,17 @@ void ASomnusCharacter::Die(const FVector& HitDirection)
 		EquippedWeapon = nullptr;
 		UpdateWeaponAnimLayers(nullptr);
 	}
-
-	// Only clean up an ability system that exists. It lives on the PlayerState, which a character
-	// placed in the level never had and an unpossessed corpse no longer has.
-	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
-	{
-		ASC->CancelAllAbilities();
-
-		// Regen, buffs and anything else that has no business ticking on a body.
-		FGameplayTagContainer EffectTagsToRemove;
-		EffectTagsToRemove.AddTag(SomnusTags::Effect_RemoveOnDeath);
-		ASC->RemoveActiveEffectsWithGrantedTags(EffectTagsToRemove);
-
-		// Kept alongside bDead rather than replaced by it: the tag is what blocks abilities while
-		// the ability system is still attached, which is a different question from "is this a corpse".
-		ASC->AddLooseGameplayTag(SomnusTags::State_Dead, 1, EGameplayTagReplicationState::TagOnly);
-	}
-
-	// Outside the block on purpose - the ragdoll has to happen either way. No hand call to
-	// ApplyDeathState here the way OnRep_LootTarget needs one: a multicast runs locally on the
-	// authority too (Actor.cpp:5500-5519), so the server gets its half from this line.
-	MulticastDeath(HitDirection);
 }
 
-void ASomnusCharacter::ApplyDeathState()
+void ASomnusCharacter::HandleDeathEvent(const FVector& HitDirection)
 {
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	GetCharacterMovement()->SetMovementMode(MOVE_None);
-
-	GetMesh()->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
-
-	// Going slack goes through the hit react component rather than the mesh directly: it owns the
-	// physics control body modifiers, and those reassert the movement type. Setting bodies to
-	// simulate behind its back leaves them kinematic, which reads on screen as a frozen pose.
-	if (HitReact)
-	{
-		HitReact->SetPhysicsPose(ESomnusPhysicsPose::Limp);
-	}
-}
-
-void ASomnusCharacter::OnRep_Dead()
-{
-	// The half of dying that has to survive being missed. A machine that was not watching - out
-	// of relevancy, or not yet connected when the body fell - never hears the multicast, and
-	// would otherwise be left with a corpse standing up and playing its idle forever.
-	if (bDead)
-	{
-		ApplyDeathState();
-	}
-}
-
-void ASomnusCharacter::MulticastDeath_Implementation(const FVector& HitDirection)
-{
-	// Called here as well as from OnRep_Dead because the two have no ordering guarantee between
-	// them. Arriving first, this is what has the mesh simulating in time for the impulse below;
-	// arriving second, it costs nothing.
-	ApplyDeathState();
-
-	// Kept an event rather than moved into the state above, because it only means anything at the
-	// instant it happens. A machine that missed it wants the body, not a shove five seconds late.
-	if (!HitDirection.IsNearlyZero())
-	{
-		GetMesh()->AddImpulse(HitDirection * 1500.0f, NAME_None, true);
-	}
-
-	// Notify Blueprint for death UI (owning client only). The controller has to be a player
-	// controller, not merely a local one: IsLocalController() is unconditionally true in
-	// standalone (Controller.cpp:90), so an AI-possessed body would put a death screen on the
-	// local player's viewport.
+	// Death UI for the owning client only. The controller has to be a player controller, not
+	// merely a local one: IsLocalController() is unconditionally true in standalone
+	// (Controller.cpp:90), so an AI-possessed body would put a death screen on the local viewport.
 	if (const APlayerController* PC = Cast<APlayerController>(GetController()); PC && PC->IsLocalController())
 	{
 		OnDeath();
 	}
-}
-
-bool ASomnusCharacter::IsDead() const
-{
-	// bDead is checked first because an unpossessed corpse has no PlayerState, and therefore no
-	// ability system to ask.
-	if (bDead) return true;
-
-	const UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
-	return ASC && ASC->HasMatchingGameplayTag(SomnusTags::State_Dead);
 }
 
 void ASomnusCharacter::ServerRequestRespawn_Implementation()
@@ -854,4 +838,69 @@ void ASomnusCharacter::SomnusDumpContainers()
 	}
 
 	UE_LOG(LogSomnusInventory, Warning, TEXT("===== [%s] end ====="), *Machine);
+}
+
+void ASomnusCharacter::PushOverlappingZombies(float DeltaTime)
+{
+	if (!GetSomnusMovement()) return;
+	TArray<AActor*> OverlappingZombies;
+	GetSomnusMovement()->FindOverlappingZombies(OverlappingZombies);
+
+	for (AActor* OverlappingZombie : OverlappingZombies)
+	{
+		ACharacter* ZombieCharacter = Cast<ACharacter>(OverlappingZombie);
+		if (!ZombieCharacter)
+		{
+			continue;
+		}
+
+		const FVector Shove = ComputeZombieShove(ZombieCharacter, DeltaTime);
+		if (Shove.IsNearlyZero())
+		{
+			continue;
+		}
+
+		// Swept, so a zombie with a wall or another zombie behind it stays put - and then the
+		// movement component's penetration limit is what stops the player.
+		FHitResult Hit;
+		ZombieCharacter->GetCharacterMovement()->SafeMoveUpdatedComponent(Shove, ZombieCharacter->GetActorQuat(), true, Hit);
+	}
+}
+
+FVector ASomnusCharacter::ComputeZombieShove(const ACharacter* Zombie, float DeltaTime) const
+{
+	// Flat on purpose: a push with height in it would lift the zombie off the floor or drive it
+	// into it whenever the two stand on different steps.
+	const FVector ToZombie = FVector(Zombie->GetActorLocation() - GetActorLocation()) * FVector(1.f, 1.f, 0.f);
+	const double Distance = ToZombie.Size();
+
+	const double Penetration = GetCapsuleComponent()->GetScaledCapsuleRadius()
+		+ Zombie->GetCapsuleComponent()->GetScaledCapsuleRadius() - Distance;
+	if (Penetration <= 0.0)
+	{
+		return FVector::ZeroVector;
+	}
+
+	// Standing exactly on top of each other gives no line to push along; out ahead of the body
+	// is the side the player is walking into anyway.
+	const FVector TowardZombie = Distance > UE_KINDA_SMALL_NUMBER ? ToZombie / Distance : GetActorForwardVector().GetSafeNormal2D();
+
+	// Carried at the speed this body is heading into the zombie. The movement component has already
+	// capped that at what the zombie's resistance leaves, so the two move on together at one speed
+	// and the gap between them holds instead of closing into a wall.
+	const double SpeedIntoZombie = FVector::DotProduct(GetVelocity() * FVector(1.f, 1.f, 0.f), TowardZombie);
+	const double Carry = FMath::Max(SpeedIntoZombie, 0.0) * DeltaTime;
+
+	// Eased out by part of the overlap. Capped at the whole of it, so a long frame settles the zombie
+	// at the capsule's edge instead of flinging it past.
+	const double EaseOut = Penetration * FMath::Min(CrowdPushStrength * DeltaTime, 1.f);
+
+	// Anything past the penetration limit goes at once. The limit on the player's side only stops the
+	// player; a zombie chasing in is stopped by nothing else, and past the centre the line flips and
+	// the player would be pushed through it.
+	const double Excess = FMath::Max(Penetration - GetSomnusMovement()->GetCrowdMaxPenetration(), 0.0);
+
+	// Easing out and backing out both close the overlap, so the larger of the two is taken rather
+	// than their sum. Carrying is separate: it keeps up with the player rather than closing anything.
+	return TowardZombie * (Carry + FMath::Max(EaseOut, Excess));
 }

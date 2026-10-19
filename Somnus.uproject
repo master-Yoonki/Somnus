@@ -37,6 +37,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "MotionWarping",
+			"Enabled": true
+		},
+		{
 			"Name": "PhysicsControl",
 			"Enabled": true
 		},

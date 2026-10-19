@@ -33,7 +33,7 @@ namespace SomnusTags
 	UE_DEFINE_GAMEPLAY_TAG(Equipment_Slot_Weapon_Secondary, "Equipment.Slot.Weapon.Secondary");
 
 	// Equipment identity
-	UE_DEFINE_GAMEPLAY_TAG(Equipped_Weapon_Bat, "Equipped.Weapon.Bat");
+	UE_DEFINE_GAMEPLAY_TAG(Equipped_Weapon_Melee_Bat, "Equipped.Weapon.Melee.Bat");
 
 	// Data — SetByCaller keys
 	UE_DEFINE_GAMEPLAY_TAG(Data_Damage, "Data.Damage");
@@ -64,8 +64,11 @@ namespace SomnusTags
 
 	// Character state
 	UE_DEFINE_GAMEPLAY_TAG(State_Aiming, "State.Aiming");
+	UE_DEFINE_GAMEPLAY_TAG(State_InAir, "State.InAir");
 	UE_DEFINE_GAMEPLAY_TAG(State_MovementCancellable, "State.MovementCancellable");
 	UE_DEFINE_GAMEPLAY_TAG(State_Dead, "State.Dead");
+	UE_DEFINE_GAMEPLAY_TAG(State_Staggered, "State.Staggered");
+	UE_DEFINE_GAMEPLAY_TAG(State_Attacking, "State.Attacking");
 
 	// Effect policy tags
 	UE_DEFINE_GAMEPLAY_TAG(Effect_RemoveOnDeath, "Effect.RemoveOnDeath");
@@ -84,4 +87,7 @@ namespace SomnusTags
 	// Zombie
 	// Zombie Ability identity tags
 	UE_DEFINE_GAMEPLAY_TAG(Ability_Zombie_Melee, "Ability.Zombie.Melee");
+
+	// Gameplay cues
+	UE_DEFINE_GAMEPLAY_TAG(GameplayCue_Hit_Melee, "GameplayCue.Hit.Melee");
 }

@@ -3,36 +3,19 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Animation/AnimInstance.h"
+#include "Animation/SomnusAnimInstanceBase.h"
 #include "SomnusZombieAnimInstance.generated.h"
 
-class ASomnusZombieCharacter;
-class UCharacterMovementComponent;
-
 UCLASS()
-class SOMNUS_API USomnusZombieAnimInstance : public UAnimInstance
+class SOMNUS_API USomnusZombieAnimInstance : public USomnusAnimInstanceBase
 {
 	GENERATED_BODY()
 
 public:
-	virtual void NativeInitializeAnimation() override;
-	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+	virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
 
 protected:
-	UPROPERTY(Transient)
-	TObjectPtr<ASomnusZombieCharacter> CachedCharacter;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UCharacterMovementComponent> MovementComponent;
-
-	// Horizontal speed for locomotion blends
+	/** Any speed at all. A zombie has no intent to read ahead of its body, unlike the player. */
 	UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
-	float GroundSpeed;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Locomotion")
-	bool bIsMoving;
-
-	// True when the character has State.Dead tag — ABP can use to disable locomotion
-	UPROPERTY(BlueprintReadOnly, Category = "State")
-	bool bIsDead;
+	bool bIsMoving = false;
 };

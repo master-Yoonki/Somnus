@@ -23,4 +23,12 @@ namespace SomnusCollision
 	 *  the Pawn profile opts out so a swing passes the capsule and lands on the character
 	 *  mesh instead - that is what keeps the reported bone, and the hit reaction, meaningful. */
 	inline constexpr ECollisionChannel Weapon = ECC_GameTraceChannel2;
+
+	/** Object type of zombie capsules. Blocks by default, so zombies stay solid to the world and to
+	 *  each other, but the Pawn profile overlaps it: the player wades into a crowd instead of being
+	 *  walled off, and the zombies are shoved aside rather than stood on. */
+	inline constexpr ECollisionChannel Zombie = ECC_GameTraceChannel3;
+
+	/** The collision profile zombie capsules use. */
+	inline const FName ZombieProfile = TEXT("Zombie");
 }

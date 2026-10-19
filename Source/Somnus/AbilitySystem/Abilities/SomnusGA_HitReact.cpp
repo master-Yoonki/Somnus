@@ -3,7 +3,11 @@
 
 #include "AbilitySystem/Abilities/SomnusGA_HitReact.h"
 
+#include "Abilities/Tasks/AbilityTask_ApplyRootMotionConstantForce.h"
+#include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
+#include "Abilities/Tasks/AbilityTask_WaitDelay.h"
 #include "AbilitySystem/SomnusGameplayEffectContext.h"
+#include "Character/SomnusCharacterBase.h"
 #include "Character/SomnusHitReactComponent.h"
 #include "Core/SomnusGameplayTags.h"
 
@@ -18,7 +22,22 @@ USomnusGA_HitReact::USomnusGA_HitReact()
 	SourceBlockedTags.AddTag(SomnusTags::State_Dead);
 	
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerInitiated;
-	
+
+	// One instance per body, restarted by a fresh hit so a strike landing mid-stagger extends it
+	// instead of being dropped.
+	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+	bRetriggerInstancedAbility = true;
+
+	// Held for as long as the ability runs, which is as long as the stagger lasts. A zombie's own
+	// swing is cut off by it; the player has no ability with that tag, so nothing of theirs is.
+	ActivationOwnedTags.AddTag(SomnusTags::State_Staggered);
+	CancelAbilitiesWithTag.AddTag(SomnusTags::Ability_Zombie_Melee);
+
+	RegionRootBones.Add(ESomnusHitRegion::Head, TEXT("head"));
+	RegionRootBones.Add(ESomnusHitRegion::LeftArm, TEXT("upperarm_l"));
+	RegionRootBones.Add(ESomnusHitRegion::RightArm, TEXT("upperarm_r"));
+	RegionRootBones.Add(ESomnusHitRegion::LeftLeg, TEXT("thigh_l"));
+	RegionRootBones.Add(ESomnusHitRegion::RightLeg, TEXT("thigh_r"));
 }
 
 void USomnusGA_HitReact::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
@@ -55,7 +74,134 @@ void USomnusGA_HitReact::ActivateAbility(const FGameplayAbilitySpecHandle Handle
 		static_cast<const FSomnusGameplayEffectContext*>(TriggerEventData->ContextHandle.Get());
 	const FVector HitImpulse = SomnusCtx->GetHitImpulse();
 	
+	const float ImpulseSize = static_cast<float>(HitImpulse.Size());
+
+	// The line the blow travelled, flat - height in it would lift the body off the floor or drive it
+	// in. Worked out once because the authored reaction and the shove both follow it and must agree.
+	// A swing tracked with no sideways speed, such as a straight chop down, gives no line, so it
+	// falls back to straight away from whoever struck.
+	FVector StrikeDirection = HitImpulse.GetSafeNormal2D();
+	if (StrikeDirection.IsNearlyZero())
+	{
+		const AActor* Attacker = TriggerEventData->ContextHandle.GetEffectCauser();
+		const AActor* Struck = GetAvatarActorFromActorInfo();
+		if (Attacker && Struck)
+		{
+			StrikeDirection = (Struck->GetActorLocation() - Attacker->GetActorLocation()).GetSafeNormal2D();
+		}
+	}
+
+	// A hard enough blow from the front to the head or a limb plays the region's authored reaction
+	// instead of the physical one. The montage carries its own root motion, so it is the shove too,
+	// and the stagger lasts exactly as long as it plays.
+	if (ImpulseSize >= MontageImpulseThreshold && IsHitFromFront(GetAvatarActorFromActorInfo(), StrikeDirection))
+	{
+		const ESomnusHitRegion Region = ResolveHitRegion(ActorInfo->SkeletalMeshComponent.Get(), HitBone);
+		UAnimMontage* RegionReaction = Region != ESomnusHitRegion::Torso ? PickMontage(Region) : nullptr;
+		if (RegionReaction)
+		{
+			// Every way the montage can finish ends the ability, a cut-off or a failed start included.
+			// Missing one would leave the stagger tag on, and the zombie frozen, for good.
+			UAbilityTask_PlayMontageAndWait* PlayReaction =
+				UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(this, NAME_None, RegionReaction);
+			PlayReaction->OnCompleted.AddDynamic(this, &USomnusGA_HitReact::OnReactionFinished);
+			PlayReaction->OnBlendOut.AddDynamic(this, &USomnusGA_HitReact::OnReactionFinished);
+			PlayReaction->OnInterrupted.AddDynamic(this, &USomnusGA_HitReact::OnReactionFinished);
+			PlayReaction->OnCancelled.AddDynamic(this, &USomnusGA_HitReact::OnReactionFinished);
+			PlayReaction->ReadyForActivation();
+			return;
+		}
+	}
+
 	HitComponent->HitReaction(HitBone, HitLocation, HitImpulse);
+
+	const float StaggerDuration = EvaluateByImpulse(StaggerDurationByImpulse, ImpulseSize);
+	const float KnockbackStrength = EvaluateByImpulse(KnockbackStrengthByImpulse, ImpulseSize);
+
+	// A body whose curves are empty only flinches physically, and that needs nothing kept alive.
+	if (StaggerDuration <= 0.f && KnockbackStrength <= 0.f)
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+		return;
+	}
+
+	// No line at all only costs the shove. The stagger still runs, so this path must not return.
+	bool bKnockedBack = false;
+	if (KnockbackStrength > 0.f && !StrikeDirection.IsNearlyZero())
+	{
+		UAbilityTask_ApplyRootMotionConstantForce* Knockback =
+			UAbilityTask_ApplyRootMotionConstantForce::ApplyRootMotionConstantForce(
+				this, NAME_None,
+				StrikeDirection, KnockbackStrength, KnockbackDuration,
+				/*bIsAdditive*/ false,
+				/*StrengthOverTime*/ nullptr,
+				ERootMotionFinishVelocityMode::SetVelocity,
+				/*SetVelocityOnFinish*/ FVector::ZeroVector,
+				/*ClampVelocityOnFinish*/ 0.f,
+				/*bEnableGravity*/ true);
+		Knockback->ReadyForActivation();
+		bKnockedBack = true;
+	}
+
+	const float ReactionDuration = FMath::Max(StaggerDuration, bKnockedBack ? KnockbackDuration : 0.f);
+	UAbilityTask_WaitDelay* WaitReaction = UAbilityTask_WaitDelay::WaitDelay(this, ReactionDuration);
+	WaitReaction->OnFinish.AddDynamic(this, &USomnusGA_HitReact::OnReactionFinished);
+	WaitReaction->ReadyForActivation();
+}
+
+ESomnusHitRegion USomnusGA_HitReact::ResolveHitRegion(const USkeletalMeshComponent* Mesh, FName HitBone) const
+{
+	if (!Mesh || HitBone == NAME_None) return ESomnusHitRegion::Torso;
 	
-	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+	while (HitBone != NAME_None && !RegionRootBones.FindKey(HitBone))
+	{
+		HitBone = Mesh->GetParentBone(HitBone);		
+	}
+	
+	if (const ESomnusHitRegion* Region = RegionRootBones.FindKey(HitBone))
+	{
+		return *Region;
+	}
+	return ESomnusHitRegion::Torso;
+}
+
+bool USomnusGA_HitReact::IsHitFromFront(const AActor* StruckActor, const FVector& StrikeDirection) const
+{
+	if (!StruckActor || StrikeDirection.IsNearlyZero()) return false;
+	
+	const FVector StruckFacing = StruckActor->GetActorForwardVector().GetSafeNormal2D();
+
+	// A blow from the front travels toward the back, against the facing, so the two point apart.
+	// Within the cone means at least as opposed as the cone's edge: -cos(half angle), which for
+	// 60 degrees is -0.5.
+	const double Alignment = FVector::DotProduct(StrikeDirection, StruckFacing);
+	const double ConeEdge = FMath::Cos(FMath::DegreesToRadians(FrontConeHalfAngle));
+
+	return Alignment <= -ConeEdge;
+}
+
+UAnimMontage* USomnusGA_HitReact::PickMontage(ESomnusHitRegion Region) const
+{
+	// A region entered in the table but not filled in yet counts the same as one left out.
+	const FSomnusHitReactMontages* Reactions = RegionMontages.Find(Region);
+	if (!Reactions || Reactions->Montages.IsEmpty())
+	{
+		return nullptr;
+	}
+	return Reactions->Montages[FMath::RandRange(0, Reactions->Montages.Num() - 1)];
+}
+
+float USomnusGA_HitReact::EvaluateByImpulse(const FRuntimeFloatCurve& Curve, float ImpulseSize)
+{
+	// Zero for an empty curve is the answer wanted here, not a fallback: no curve means this body
+	// does not stagger or get shoved, which is how a body type opts out.
+	const FRichCurve* RichCurve = Curve.GetRichCurveConst();
+	if (!RichCurve || RichCurve->GetNumKeys() == 0) return 0.f;
+
+	return RichCurve->Eval(ImpulseSize);
+}
+
+void USomnusGA_HitReact::OnReactionFinished()
+{
+	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }

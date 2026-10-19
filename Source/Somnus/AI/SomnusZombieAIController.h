@@ -6,6 +6,7 @@
 #include "AIController.h"
 #include "BehaviorTree/BehaviorTreeTypes.h"
 #include "DetourCrowdAIController.h"
+#include "GameplayTagContainer.h"
 #include "Perception/AIPerceptionTypes.h"
 #include "SomnusZombieAIController.generated.h"
 
@@ -68,6 +69,7 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
+	virtual void OnUnPossess() override;
 
 	UPROPERTY(EditDefaultsOnly, Category = "AI")
 	TObjectPtr<class UBehaviorTree> BehaviorTree;
@@ -156,6 +158,13 @@ private:
 	void OnGraceExpired();
 
 	FTimerHandle GraceTimerHandle;
+
+	/** Stops the body and freezes the tree while State.Staggered is on the pawn, and lets both go
+	 *  again when it comes off. Paused rather than aborted, so the zombie picks up where it was -
+	 *  still chasing whoever hit it - instead of re-deciding from scratch. */
+	void OnStaggeredTagChanged(const FGameplayTag Tag, int32 NewCount);
+
+	FDelegateHandle StaggeredTagHandle;
 
 	/** Where the target stood when sight broke. Written once per loss and never refreshed, so the
 	 *  search destination cannot creep along with a player the zombie can no longer see. */

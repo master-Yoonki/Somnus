@@ -3,7 +3,7 @@
 
 #include "AbilitySystem/Attributes/SomnusAttributeSet.h"
 
-#include "Character/SomnusCharacter.h"
+#include "Character/SomnusCharacterBase.h"
 #include "Core/SomnusGameplayTags.h"
 #include "Net/UnrealNetwork.h"
 
@@ -73,7 +73,7 @@ void USomnusAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCall
 
 			if (NewHealth <= 0.0f)
 			{
-				if (ASomnusCharacter* Character = Cast<ASomnusCharacter>(GetOwningAbilitySystemComponent()->GetAvatarActor()))
+				if (ASomnusCharacterBase* Character = Cast<ASomnusCharacterBase>(GetOwningAbilitySystemComponent()->GetAvatarActor()))
 				{
 					// Extract hit direction from the damage effect context
 					FVector HitDirection = FVector::ZeroVector;

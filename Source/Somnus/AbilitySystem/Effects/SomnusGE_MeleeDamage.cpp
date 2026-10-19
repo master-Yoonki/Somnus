@@ -16,4 +16,8 @@ USomnusGE_MeleeDamage::USomnusGE_MeleeDamage()
 	SetByCaller.DataTag = SomnusTags::Data_Damage;
 	DamageModifier.ModifierMagnitude = FGameplayEffectModifierMagnitude(SetByCaller);
 	Modifiers.Add(DamageModifier);
+
+	// Every landed strike looks and feels like one. An instant effect executes its cues rather
+	// than adding them, so this fires once per hit on every machine.
+	GameplayCues.Add(FGameplayEffectCue(SomnusTags::GameplayCue_Hit_Melee, 0.f, 1.f));
 }

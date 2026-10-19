@@ -37,7 +37,7 @@ public class Somnus : ModuleRules
 			"ControlRig"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "SlateCore", "AnimationWarpingRuntime" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "SlateCore", "AnimationWarpingRuntime", "MotionWarping", "Niagara" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

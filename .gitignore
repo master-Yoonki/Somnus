@@ -18,3 +18,11 @@ Build/
 
 # Scratch assets pulled in for reference - never commit
 Content/ExampleContent/
+
+# Purchased mall content: re-downloadable from Fab and 1.7GB of LFS if tracked.
+# The door Blueprints are the exception - they are being reparented onto our own
+# base class, so their history is worth the 2.4MB.
+Content/ShoppingMall/*
+!Content/ShoppingMall/Blueprints/
+Content/ShoppingMall/Blueprints/*
+!Content/ShoppingMall/Blueprints/DoorBP/

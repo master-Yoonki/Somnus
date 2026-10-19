@@ -3,13 +3,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "GameFramework/Character.h"
-#include "AbilitySystemInterface.h"
+#include "Character/SomnusCharacterBase.h"
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
 #include "Core/SomnusStrikeSource.h"
 #include "Core/SomnusInteractable.h"
 #include "Character/SomnusMovementTypes.h"
+#include "Camera/SomnusCameraMode.h"
 #include "SomnusCharacter.generated.h"
 
 class ASomnusWeapon;
@@ -18,18 +18,19 @@ class UGameplayEffect;
 class USomnusInputConfig;
 class USomnusInventoryComponent;
 class USomnusItemAnimLayers;
+class USomnusCharacterMovementComponent;
 
 /**
  * Base character class for Project Somnus.
  * Acts as the physical avatar for the GAS component stored in the PlayerState.
  */
 UCLASS()
-class SOMNUS_API ASomnusCharacter : public ACharacter, public IAbilitySystemInterface, public ISomnusStrikeSource, public ISomnusInteractable
+class SOMNUS_API ASomnusCharacter : public ASomnusCharacterBase, public ISomnusStrikeSource, public ISomnusInteractable
 {
 	GENERATED_BODY()
 
 public:
-	ASomnusCharacter();
+	ASomnusCharacter(const FObjectInitializer& ObjectInitializer);
 
 	// Implement IAbilitySystemInterface to fetch ASC from PlayerState
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
@@ -111,13 +112,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interact", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<class USomnusInteractorComponent> InteractorComponent;
-	
-	// Physics-based flinch on non-lethal hits
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HitReact", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<class USomnusHitReactComponent> HitReact;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "HitReact", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<class UPhysicsControlComponent> PhysicsControl;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<class USomnusAttackSlotComponent> AttackSlotComponent;
+
 
 public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "UI")
@@ -132,28 +130,12 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "GAS|UI")
 	void UpdateStaminaUI(float CurrentStamina, float MaxStamina);
 
-	// Called when Health reaches zero. Cancels abilities, ragdolls.
-	// HitDirection is the direction of the killing blow (for ragdoll impulse). Zero = no impulse.
-	UFUNCTION(BlueprintCallable, Category = "GAS")
-	virtual void Die(const FVector& HitDirection = FVector::ZeroVector);
-
-	UFUNCTION(BlueprintPure, Category = "GAS")
-	bool IsDead() const;
-
 protected:
-	/** Set on death and never cleared. The ability system lives on the PlayerState, which
-	 *  unpossessing hands to the next pawn - a corpse asked through the ASC alone would answer
-	 *  that it is alive, and so would a character placed in the level that never had one. */
-	UPROPERTY(ReplicatedUsing = OnRep_Dead, VisibleInstanceOnly, BlueprintReadOnly, Category = "GAS")
-	bool bDead = false;
+	/** A looter who dies stops looting, and a body stops holding its weapon. */
+	virtual void HandleServerDeath() override;
 
-	UFUNCTION()
-	void OnRep_Dead();
-
-	/** Everything about being a corpse that has to hold on every machine for as long as the body
-	 *  lasts. Idempotent on purpose: it arrives by replication, by multicast, or by both in
-	 *  either order, and none of those know about the others. */
-	void ApplyDeathState();
+	/** The death screen, on the machine of the player who died. */
+	virtual void HandleDeathEvent(const FVector& HitDirection) override;
 
 public:
 
@@ -172,6 +154,12 @@ public:
 	/** How far the mesh is turned for the aim stance right now, mid-blend included. Animation
 	 *  counter-rotates the stance clips by exactly this so the weapon keeps pointing at the aim. */
 	float GetAimStanceYaw() const { return AimStanceYaw; }
+
+	/** Whether the aim ability is holding State.Aiming. The tag is asked once a frame and kept
+	 *  here so the aim stance, the camera and animation all answer from the same value, and so
+	 *  that animation never reaches into the ability system from a worker thread. */
+	UFUNCTION(BlueprintPure, Category = "GAS")
+	bool IsAiming() const { return bIsAiming; }
 
 	/** Called by the equipment component when a carried weapon is about to be destroyed - most
 	 *  often because it was dragged out of its slot while it was in a hand. Does nothing unless
@@ -202,8 +190,17 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerSwitchWeapon(int32 SlotIndex);
 
-	UFUNCTION()
+	/** The gait animation shows. See Gait. */
+	UFUNCTION(BlueprintPure, Category = "Movement")
 	ESomnusGait GetGait() const { return Gait; }
+
+	/** Whether the body is held square to the camera. See bIsStrafing. */
+	UFUNCTION(BlueprintPure, Category = "Movement")
+	bool IsStrafing() const { return bIsStrafing; }
+
+	/** The movement component as the class it is always created as (see the constructor). */
+	UFUNCTION(BlueprintPure, Category = "Movement")
+	USomnusCharacterMovementComponent* GetSomnusMovement() const;
 
 	// Console: dumps this machine's view of every character's containers - each compartment's
 	// grid, its contents, and the ASomnusContainerActor behind any container item, recursing
@@ -223,14 +220,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Movement")
 	FVector GetLandVelocity() const { return LandVelocity; }
 protected:
-	// GEs applied to the ASC at possession (e.g., stamina regen, passive buffs)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
-	TArray<TSubclassOf<UGameplayEffect>> DefaultGameplayEffects;
-
-	// Abilities granted at possession time (innate abilities like Jump)
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GAS")
-	TArray<TSubclassOf<UGameplayAbility>> DefaultAbilities;
-
 	// Currently equipped weapon (null = unarmed)
 	UPROPERTY(Transient, ReplicatedUsing = OnRep_EquippedWeapon)
 	TObjectPtr<ASomnusWeapon> EquippedWeapon;
@@ -249,21 +238,44 @@ protected:
 
 	float AimStanceYaw = 0.f;
 
+	bool bIsAiming = false;
+
 	/** Turns the mesh rather than the capsule: movement, aim and camera stay on the capsule, while
 	 *  motion matching reads the mesh's rotation as the body's facing and picks steps to suit. */
 	void UpdateAimStanceTurn(float DeltaTime);
-	
-	UPROPERTY(EditDefaultsOnly, Category = "Input")
-	float RunScale = 1.0;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Input")
-	float RunScaleThreshold = 0.75;
-	
-	UPROPERTY(EditDefaultsOnly, Category = "Input")
-	float WalkScale = 0.5; 
-	
-	UFUNCTION(Category = "Input")
-	FVector2D ClampInputScale(FVector2D InputScale) const;
+	/** The framing the camera is moving toward. Set this from whatever decides the character is
+	 *  exploring, strafing or aiming; the camera does not read that state itself. */
+	UPROPERTY(BlueprintReadWrite, Category = "Camera")
+	ESomnusCameraFraming CameraFraming = ESomnusCameraFraming::Explore;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Framing")
+	FSomnusCameraMode ExploreCamera;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Framing")
+	FSomnusCameraMode StrafeCamera;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Framing")
+	FSomnusCameraMode MeleeAimCamera;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Framing")
+	FSomnusCameraMode GunAimCamera;
+
+	const FSomnusCameraMode& GetCameraMode(ESomnusCameraFraming Framing) const;
+
+	/** Moves the camera toward the framing it was given. Arm length, offset and field of view all
+	 *  come off one blend: moved apart they read as a camera lagging its own decision. */
+	void UpdateCamera(float DeltaTime);
+
+	/** The one place the camera's numbers are written. Blending the result of two framings rather
+	 *  than their inputs would start here too, so the rest of the class need not know which it is. */
+	void ApplyCameraMode(const FSomnusCameraMode& From, const FSomnusCameraMode& To, float Alpha);
+
+	/** Where the camera stood when the framing last changed. Read off the components rather than
+	 *  off the framing it was leaving, so a blend interrupted halfway does not jump backwards. */
+	FSomnusCameraMode CameraBlendStart;
+	ESomnusCameraFraming CameraFraming_LastFrame = ESomnusCameraFraming::Explore;
+	float CameraBlendElapsed = 0.f;
 	
 	UFUNCTION()
 	void OnRep_EquippedWeapon(ASomnusWeapon* OldWeapon);
@@ -280,17 +292,33 @@ protected:
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere, Category = "Movement")
 	bool bJustLanded;
 
-	UPROPERTY(BlueprintReadWrite, VisibleAnywhere, Category = "Movement")
+	/** The gait animation shows. Worked out every tick from the movement component by the machines
+	 *  that run this character's moves - its owner, straight from its own input, and the server -
+	 *  and sent from the server to everyone else, who have no wishes to work it out from. */
+	UPROPERTY(Transient, Replicated, BlueprintReadOnly, VisibleAnywhere, Category = "Movement")
 	ESomnusGait Gait;
-	
 
+	/** Kept, and sent to the machines that only watch, for the same reason as Gait. */
+	UPROPERTY(Transient, Replicated, BlueprintReadOnly, VisibleAnywhere, Category = "Movement")
+	bool bIsStrafing = false;
 
-	// Guards against double-granting on repossession/respawn
-	bool bDefaultAbilitiesGiven = false;
-	bool bDefaultEffectsApplied = false;
+	/** Refreshes Gait and bIsStrafing on the machines that run this character's moves, and on the
+	 *  ones that only watch, hands the replicated strafe state to the movement component. */
+	void UpdateLocomotionState();
 
-private:
-	// Multicast: runs ragdoll and visual death effects on all machines
-	UFUNCTION(NetMulticast, Reliable)
-	void MulticastDeath(const FVector& HitDirection);
+	/** How hard an overlap that nobody is pushing into gets eased apart, as the share of it closed
+	 *  per second - a zombie that walked into a standing player, say. */
+	UPROPERTY(EditDefaultsOnly, Category = "Movement|Crowd", meta = (ClampMin = "0.0"))
+	float CrowdPushStrength = 8.f;
+
+	/** Moves each overlapping zombie by ComputeZombieShove, swept. Server only - zombies are the
+	 *  server's to move, and their new places replicate. */
+	void PushOverlappingZombies(float DeltaTime);
+
+	/** Where one zombie should go this tick, made of three parts along the line from this body to it:
+	 *  carried at the speed this body is moving into it, which the movement component has already
+	 *  cut to what the zombie's resistance leaves; eased out by part of whatever overlap is left;
+	 *  and pushed straight back out of anything past the movement component's penetration limit,
+	 *  so a zombie walking into the player cannot reach its centre either. */
+	FVector ComputeZombieShove(const ACharacter* Zombie, float DeltaTime) const;
 };
